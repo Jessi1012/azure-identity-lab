@@ -32,6 +32,8 @@ resource "azurerm_log_analytics_workspace" "identity_logs" {
 }
 
 # 3. MICROSOFT SENTINEL
+# Import existing solution if already deployed manually:
+# terraform import azurerm_log_analytics_solution.sentinel "/subscriptions/645a9291-908c-4ee8-b187-9b84d1e25a36/resourceGroups/Identity-Lab-RG/providers/Microsoft.OperationsManagement/solutions/SecurityInsights(identity-lab-logs-workspace01)"
 resource "azurerm_log_analytics_solution" "sentinel" {
   solution_name         = "SecurityInsights"
   location              = data.azurerm_resource_group.identity_lab.location
@@ -43,9 +45,14 @@ resource "azurerm_log_analytics_solution" "sentinel" {
     publisher = "Microsoft"
     product   = "OMSGallery/SecurityInsights"
   }
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 # 4. AZURE AD DIAGNOSTIC SETTINGS
+# Note: This resource has known provider issues. If it fails, configure manually in portal.
 resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
   name                       = "SendLogsToSentinel"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
@@ -77,6 +84,10 @@ resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
       enabled = false
     }
   }
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # 5. SENTINEL DETECTION RULES - Define multiple scheduled alert rules using KQL queries
@@ -103,6 +114,8 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
       lookback_duration = "PT5M"
     }
   }
+
+  depends_on = [azurerm_log_analytics_solution.sentinel]
 }
 
 
@@ -128,6 +141,8 @@ resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
       lookback_duration = "PT5M"
     }
   }
+
+  depends_on = [azurerm_log_analytics_solution.sentinel]
 }
 
 
@@ -153,6 +168,8 @@ resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
       lookback_duration = "PT5M"
     }
   }
+
+  depends_on = [azurerm_log_analytics_solution.sentinel]
 }
 
 
@@ -178,6 +195,8 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
       lookback_duration = "PT5M"
     }
   }
+
+  depends_on = [azurerm_log_analytics_solution.sentinel]
 }
 
 

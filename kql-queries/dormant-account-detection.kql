@@ -1,4 +1,4 @@
-let DormantThreshold = 30d;
+let DormantThreshold = 30;
 let RecentSignIns = SigninLogs
     | where TimeGenerated > ago(1d)
     | where ResultType == 0
