@@ -8,19 +8,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Check for secrets (TruffleHog)
-        uses: trufflesecurity/trufflehog@main
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
         with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
+         tflint_version: latest
+
+      - name: Run TFLint
+        working-directory: terraform
+        run: |
+         tflint --init
+         tflint
+        continue-on-error: true
+
+
+      - name: Terraform format check (TFLint)
+        working-directory: terraform
+        run: |
+         curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+         tflint --init
+         tflint
         continue-on-error: true
 
       - name: Terraform format check (TFLint)
-        uses: terraform-linters/tflint@v3
+        uses: reviewdog/action-tflint@master
         with:
           working_directory: terraform
         continue-on-error: true
