@@ -16,5 +16,5 @@
  Incidents
  ↓
  Logic App (Auto-remediation)
- ↓
+ 
 #this is working flow

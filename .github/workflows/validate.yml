@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Check for secrets (TruffleHog)
         uses: trufflesecurity/trufflehog@main
@@ -20,7 +20,7 @@ jobs:
         continue-on-error: true
 
       - name: Terraform format check (TFLint)
-        uses: terraform-linters/tflint@v4
+        uses: terraform-linters/tflint@v3
         with:
           working_directory: terraform
         continue-on-error: true
