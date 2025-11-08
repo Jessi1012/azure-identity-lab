@@ -15,17 +15,19 @@ provider "azurerm" {
 
 # Get current Azure client configuration like tenant and subscription info
 data "azurerm_client_config" "current" {}
-#create all needed
-# 1. RESOURCE GROUP
-data "azurerm_resource_group" "identity_lab" {
-  name = "identity-lab-RG"
+
+# 1. RESOURCE GROUP (create instead of referencing a pre-existing one)
+resource "azurerm_resource_group" "identity_lab" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = var.tags
 }
 
 # 2. LOG ANALYTICS WORKSPACE
 resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
-  location            = data.azurerm_resource_group.identity_lab.location
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
+  location            = azurerm_resource_group.identity_lab.location
+  resource_group_name = azurerm_resource_group.identity_lab.name
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
   tags                = var.tags
@@ -34,9 +36,6 @@ resource "azurerm_log_analytics_workspace" "identity_logs" {
 # 3. MICROSOFT SENTINEL
 resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
   workspace_id = azurerm_log_analytics_workspace.identity_logs.id
-
-  # Ensure this depends on the Log Analytics Workspace being created first
-  depends_on = [azurerm_log_analytics_workspace.identity_logs]
 }
 
 # 4. AZURE AD DIAGNOSTIC SETTINGS
@@ -104,12 +103,6 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
 }
 
 
-
-action "ActionGroup" "logicapp_action" {
-  action_group_id = azurerm_monitor_action_group.logicapp_action.id
-}
-
-
 # Impossible travel detection
 resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
   name                       = "ImpossibleTravelDetection"
@@ -132,11 +125,6 @@ resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
       lookback_duration = "PT5M"
     }
   }
-}
-
-
-action "ActionGroup" "logicapp_action" {
-  action_group_id = azurerm_monitor_action_group.logicapp_action.id
 }
 
 
@@ -165,12 +153,6 @@ resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
 }
 
 
-
-action "ActionGroup" "logicapp_action" {
-  action_group_id = azurerm_monitor_action_group.logicapp_action.id
-}
-
-
 # Privilege escalation detection
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
@@ -193,10 +175,6 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
       lookback_duration = "PT5M"
     }
   }
-}
-
-action "ActionGroup" "logicapp_action" {
-  action_group_id = azurerm_monitor_action_group.logicapp_action.id
 }
 
 
@@ -222,8 +200,8 @@ resource "random_string" "suffix" {
 
 resource "azurerm_key_vault" "identity_vault" {
   name                       = "kv-identity-${random_string.suffix.result}" # Vault name suffix to ensure uniqueness
-  location                   = data.azurerm_resource_group.identity_lab.location
-  resource_group_name        = data.azurerm_resource_group.identity_lab.name
+  location                   = azurerm_resource_group.identity_lab.location
+  resource_group_name        = azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7
