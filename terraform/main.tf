@@ -214,6 +214,13 @@ resource "azurerm_role_assignment" "keyvault_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+resource "azurerm_monitor_action_group" "example" {
+  name                = "CriticalAlertsAction"
+  resource_group_name = azurerm_resource_group.example.name
+  short_name          = "p0action"
 
-
-
+  email_receiver {
+    name          = "sendtoadmin"
+    email_address = "admin@contoso.com"
+  }
+}
