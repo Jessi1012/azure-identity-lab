@@ -1,17 +1,17 @@
 name: Code Validation
 
 on:
-  push:
-  pull_request:
+  [push, pull_request]
 
 jobs:
   validate:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Check for secrets
+      - name: Check for secrets (TruffleHog)
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
@@ -19,7 +19,7 @@ jobs:
           head: HEAD
         continue-on-error: true
 
-      - name: Terraform format check
+      - name: Terraform format check (TFLint)
         uses: terraform-linters/tflint@v4
         with:
           working_directory: terraform

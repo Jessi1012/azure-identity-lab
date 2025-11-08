@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'terraform/**'
-  workflow_dispatch:  # Enables manual trigger from GitHub UI
+  workflow_dispatch:   # Allows manual trigger from Actions tab
 
 jobs:
   deploy:
@@ -36,7 +36,7 @@ jobs:
         with:
           scan-type: 'config'
           scan-ref: './terraform'
-        continue-on-error: false
+        continue-on-error: false  # Fail workflow if security scan fails
 
       - name: Terraform Apply
         working-directory: ./terraform
