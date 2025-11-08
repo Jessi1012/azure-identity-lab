@@ -16,18 +16,16 @@ provider "azurerm" {
 # Get current Azure client configuration like tenant and subscription info
 data "azurerm_client_config" "current" {}
 
-# 1. RESOURCE GROUP (create instead of referencing a pre-existing one)
-resource "azurerm_resource_group" "identity_lab" {
-  name     = var.resource_group_name
-  location = var.location
-  tags     = var.tags
+# 1. RESOURCE GROUP (use existing)
+data "azurerm_resource_group" "identity_lab" {
+  name = var.resource_group_name
 }
 
 # 2. LOG ANALYTICS WORKSPACE
 resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
-  location            = azurerm_resource_group.identity_lab.location
-  resource_group_name = azurerm_resource_group.identity_lab.name
+  location            = data.azurerm_resource_group.identity_lab.location
+  resource_group_name = data.azurerm_resource_group.identity_lab.name
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
   tags                = var.tags
@@ -200,8 +198,8 @@ resource "random_string" "suffix" {
 
 resource "azurerm_key_vault" "identity_vault" {
   name                       = "kv-identity-${random_string.suffix.result}" # Vault name suffix to ensure uniqueness
-  location                   = azurerm_resource_group.identity_lab.location
-  resource_group_name        = azurerm_resource_group.identity_lab.name
+  location                   = data.azurerm_resource_group.identity_lab.location
+  resource_group_name        = data.azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7
