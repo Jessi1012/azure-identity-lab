@@ -15,6 +15,7 @@ provider "azurerm" {
 
 # Get current Azure client configuration like tenant and subscription info
 data "azurerm_client_config" "current" {}
+#create all needed
 # 1. RESOURCE GROUP
 data "azurerm_resource_group" "identity_lab" {
   name = "identity-lab-RG"
