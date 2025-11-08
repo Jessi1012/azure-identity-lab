@@ -32,8 +32,17 @@ resource "azurerm_log_analytics_workspace" "identity_logs" {
 }
 
 # 3. MICROSOFT SENTINEL
-resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
-  workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+resource "azurerm_log_analytics_solution" "sentinel" {
+  solution_name         = "SecurityInsights"
+  location              = data.azurerm_resource_group.identity_lab.location
+  resource_group_name   = data.azurerm_resource_group.identity_lab.name
+  workspace_resource_id = azurerm_log_analytics_workspace.identity_logs.id
+  workspace_name        = azurerm_log_analytics_workspace.identity_logs.name
+
+  plan {
+    publisher = "Microsoft"
+    product   = "OMSGallery/SecurityInsights"
+  }
 }
 
 # 4. AZURE AD DIAGNOSTIC SETTINGS
@@ -44,32 +53,28 @@ resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
   enabled_log {
     category = "SignInLogs"
     retention_policy {
-      enabled = true
-      days    = 30
+      enabled = false
     }
   }
 
   enabled_log {
     category = "AuditLogs"
     retention_policy {
-      enabled = true
-      days    = 30
+      enabled = false
     }
   }
 
   enabled_log {
     category = "NonInteractiveUserSignInLogs"
     retention_policy {
-      enabled = true
-      days    = 30
+      enabled = false
     }
   }
 
   enabled_log {
     category = "ServicePrincipalSignInLogs"
     retention_policy {
-      enabled = true
-      days    = 30
+      enabled = false
     }
   }
 }
@@ -214,9 +219,9 @@ resource "azurerm_role_assignment" "keyvault_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-resource "azurerm_monitor_action_group" "example" {
+resource "azurerm_monitor_action_group" "identity_lab_action_group" {
   name                = "CriticalAlertsAction"
-  resource_group_name = azurerm_resource_group.example.name
+  resource_group_name = data.azurerm_resource_group.identity_lab.name
   short_name          = "p0action"
 
   email_receiver {
