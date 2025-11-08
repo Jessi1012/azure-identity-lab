@@ -1,3 +1,0 @@
-﻿# Deployment log
- Initial deployment: $(date)
-
