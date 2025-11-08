@@ -4,9 +4,15 @@ on:
   push:
     branches:
       - main
+      - feature/**
     paths:
       - 'terraform/**'
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to deploy'
+        required: false
+        default: 'main'
 
 permissions:
   contents: read
@@ -20,6 +26,9 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # Use selected ref during manual dispatch; otherwise use the triggering ref
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
@@ -34,6 +43,21 @@ jobs:
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
+
+      - name: Debug Terraform file (temporary)
+        if: always()
+        run: |
+          echo "Ref: $GITHUB_REF"
+          echo "SHA: $GITHUB_SHA"
+          ls -la ./terraform
+          echo "Searching for invalid 'action "ActionGroup"' blocks in main.tf"
+          grep -n 'action \"ActionGroup\"' ./terraform/main.tf || echo "No invalid action blocks found"
+          echo "Checksum of main.tf:" && sha256sum ./terraform/main.tf || shasum -a 256 ./terraform/main.tf
+
+      - name: Verify Azure Context
+        run: |
+          echo "Showing Azure account context after login:" 
+          az account show || echo "Azure CLI context not available"
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
