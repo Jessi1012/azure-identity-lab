@@ -1,0 +1,47 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@0.18.0
+        with:
+          scan-type: 'config'
+          scan-ref: './terraform'
+        continue-on-error: false  # Fail workflow if security scan fails
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        run: terraform apply -auto-approve -var-file=terraform.tfvars
+
+      - name: Create Success Summary
+        run: |
+          echo "# ✅ Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "All resources deployed with security scanning passed." >> $GITHUB_STEP_SUMMARY

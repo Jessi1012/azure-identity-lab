@@ -1,0 +1,15 @@
+let DormantThreshold = 30d;
+let RecentSignIns = SigninLogs
+    | where TimeGenerated > ago(1d)
+    | where ResultType == 0
+    | summarize LastSignIn = max(TimeGenerated), SignInCount = count() by UserPrincipalName;
+let HistoricalSignIns = SigninLogs
+    | where TimeGenerated between (ago(60d) .. ago(2d))
+    | where ResultType == 0
+    | summarize PreviousSignIn = max(TimeGenerated) by UserPrincipalName;
+RecentSignIns
+| join kind=leftouter (HistoricalSignIns) on UserPrincipalName
+| extend DaysDormant = datetime_diff('day', LastSignIn, PreviousSignIn)
+| where isempty(PreviousSignIn) or DaysDormant >= DormantThreshold
+| project TimeGenerated = LastSignIn, UserPrincipalName, DaysDormant
+| sort by TimeGenerated desc

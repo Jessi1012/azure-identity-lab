@@ -1,0 +1,7 @@
+AuditLogs
+| where ActivityDisplayName == "Add member to role" or ActivityDisplayName == "Add role assignment"
+| where TargetResources contains "Roles"
+| summarize count() by InitiatedByUser, TargetResources, TimeGenerated
+| where TimeGenerated > ago(1d)
+| project TimeGenerated, InitiatedByUser, TargetResources
+| sort by TimeGenerated desc

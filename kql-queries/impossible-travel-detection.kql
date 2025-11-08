@@ -1,0 +1,14 @@
+let lookback = 7d;
+let MaxTravelTime = 5h;
+let signins = SigninLogs
+    | where TimeGenerated > ago(lookback)
+    | where ResultType == 0
+    | extend lat = tostring(LocationDetails["Latitude"]), lon = tostring(LocationDetails["Longitude"])
+    | project UserPrincipalName, TimeGenerated, lat, lon, IPAddress;
+signins
+| extend PrevSignInTime = prev(TimeGenerated), PrevLat = prev(lat), PrevLon = prev(lon) by UserPrincipalName
+| extend TravelDistance = geo_distance_2points(PrevLat, PrevLon, lat, lon)
+| extend TravelTime = datetime_diff("minute", TimeGenerated, PrevSignInTime)
+| where TravelDistance > 1000 and TravelTime < 60 * 60 * 5  // More than 1000km traveled within 5 hours
+| project UserPrincipalName, TimeGenerated, IPAddress, TravelDistance, TravelTime
+| sort by TimeGenerated desc
