@@ -1,0 +1,11 @@
+# Trivy Ignore File
+# Suppress LOW-severity issues acceptable for lab/development environment
+
+# AVD-AZU-0015: Key Vault secret content-type not required for webhook URL
+AVD-AZU-0015
+
+# AVD-AZU-0017: Key Vault secret expiry not required for long-lived webhook
+AVD-AZU-0017
+
+# AVD-AZU-0045: Defender free tier acceptable for lab/learning environment
+AVD-AZU-0045

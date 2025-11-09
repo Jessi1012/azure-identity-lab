@@ -242,9 +242,16 @@ resource "azurerm_key_vault" "identity_vault" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7   # Can recover deleted secrets for 7 days
-  purge_protection_enabled   = false
+  purge_protection_enabled   = true  # Prevent permanent deletion during retention period
   enable_rbac_authorization  = true  # Role Based Access Control for permissions
-  tags                       = var.tags
+  
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"  # Allow trusted Azure services
+    ip_rules       = []  # Add your IPs if needed: ["1.2.3.4/32"]
+  }
+  
+  tags = var.tags
 }
 
 
