@@ -68,7 +68,8 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ./terraform
-        run: terraform apply -auto-approve -var-file=terraform.tfvars
+        run: terraform apply -auto-approve -var-file=./terraform/terraform.tfvars
+
 
       - name: Create Success Summary
         run: |
