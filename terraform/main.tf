@@ -210,8 +210,8 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
 # ===========================
 
 resource "azurerm_security_center_contact" "security_contact" {
-  email               = "your.email@example.com"   # CHANGE THIS to your email
-  phone               = "+91-000-000-0000"         # CHANGE THIS
+  email               = "chaitra.shashikala@gmail.com"
+  phone               = "+917204426101"
   alert_notifications = true
   alerts_to_admins    = true
 }
