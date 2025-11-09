@@ -39,3 +39,7 @@ terraform.rc
 
 terraform.tfvars
 *.tfvars
+ 
+# Local credential export files (DO NOT COMMIT SECRETS)
+sp-credentials.json
+sp-credentials-*.json
