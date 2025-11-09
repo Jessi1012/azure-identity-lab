@@ -209,12 +209,17 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
 # Defender for Cloud (Security Score)
 # ===========================
 
-resource "azurerm_security_center_contact" "security_contact" {
-  email               = "chaitra.shashikala@gmail.com"
-  phone               = "+917204426101"
-  alert_notifications = true
-  alerts_to_admins    = true
-}
+# Security contact already exists (name must be 'default')
+# Import it if you want Terraform to manage it:
+#   terraform import azurerm_security_center_contact.security_contact "/subscriptions/645a9291-908c-4ee8-b187-9b84d1e25a36/providers/Microsoft.Security/securityContacts/default"
+# Or comment out to leave it as-is:
+
+# resource "azurerm_security_center_contact" "security_contact" {
+#   email               = "chaitra.shashikala@gmail.com"
+#   phone               = "+917204426101"
+#   alert_notifications = true
+#   alerts_to_admins    = true
+# }
 
 
 resource "azurerm_security_center_subscription_pricing" "defender_vms" {
