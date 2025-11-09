@@ -59,18 +59,30 @@ resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
 
   enabled_log {
     category = "SignInLogs"  # Includes all sign-in attempts
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "AuditLogs"   # Includes all administrative changes
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "NonInteractiveUserSignInLogs" # Service account sign-ins
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "ServicePrincipalSignInLogs"  # App sign-ins
+    retention_policy {
+      enabled = false
+    }
   }
 }
 
@@ -84,22 +96,82 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   name                       = "DormantAccountReactivation"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   display_name               = "Dormant Account Reactivation Detected"
-
+  
   enabled           = true
-  query_frequency   = "PT1H"  # Run every hour
-  query_period      = "P1D"   # Look at logs from last 1 day
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
   trigger_operator  = "GreaterThan"
-  trigger_threshold = 0       # Alert if any results
-
+  trigger_threshold = 0
+  
   severity = "High"
   tactics  = ["Persistence", "InitialAccess"]
-
+  
   query = file("${path.module}/../kql-queries/dormant-account-detection.kql")
-
+  
   incident_configuration {
     create_incident = true
   }
-}
+ }
+ resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
+  name                       = "ImpossibleTravelDetection"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  display_name               = "Impossible Travel Login"
+  
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+  
+  severity = "Medium"
+  tactics  = ["InitialAccess"]
+  
+  query = file("${path.module}/../kql-queries/impossible-travel-detection.kql")
+  
+  incident_configuration {
+    create_incident = true
+  }
+ }
+ resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
+  name                       = "FailedLoginFloodDetection"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  display_name               = "Failed Login Flood (Password Spray)"
+  
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+  
+  severity = "High"
+  tactics  = ["CredentialAccess"]
+  
+  query = file("${path.module}/../kql-queries/failed-login-flood-detection.kql")
+  
+  incident_configuration {
+    create_incident = true
+  }
+ }
+resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
+  name                       = "PrivilegeEscalationDetection"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  display_name               = "Unauthorized Privilege Escalation"
+  
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+  
+  severity = "Critical"
+  tactics  = ["PrivilegeEscalation"]
+  
+  query = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
+  
+  incident_configuration {
+    create_incident = true
+  }
+ }
 
 # ===========================
 # Defender for Cloud (Security Score)
@@ -129,6 +201,8 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_key_vault" "identity_vault" {
   name                       = "kv-identity-${random_string.suffix.result}"
   location                   = azurerm_resource_group.identity_lab.location
@@ -143,9 +217,9 @@ resource "azurerm_key_vault" "identity_vault" {
 
 
 resource "azurerm_role_assignment" "keyvault_admin" {
-  scope              = azurerm_key_vault.identity_vault.id
+  scope                = azurerm_key_vault.identity_vault.id
   role_definition_name = "Key Vault Administrator"
-  principal_id       = data.azurerm_client_config.current.object_id
+  principal_id         = data.azurerm_client_config.current.object_id
 }
 
 
