@@ -29,8 +29,8 @@ data "azurerm_resource_group" "identity_lab" {
 
 resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
-  location            = azurerm_resource_group.identity_lab.location
-  resource_group_name = azurerm_resource_group.identity_lab.name
+  location            = data.azurerm_resource_group.identity_lab.location
+  resource_group_name = data.azurerm_resource_group.identity_lab.name
 
   sku               = "PerGB2018"        # Pricing plan
   retention_in_days = var.log_retention_days
@@ -240,8 +240,8 @@ data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "identity_vault" {
   name                       = "kv-identity-${random_string.suffix.result}"
-  location                   = azurerm_resource_group.identity_lab.location
-  resource_group_name        = azurerm_resource_group.identity_lab.name
+  location                   = data.azurerm_resource_group.identity_lab.location
+  resource_group_name        = data.azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   soft_delete_retention_days = 7   # Can recover deleted secrets for 7 days

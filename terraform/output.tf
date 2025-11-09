@@ -1,7 +1,7 @@
 # outputs.tf
 
 output "resource_group_name" {
-  value       = azurerm_resource_group.identity_lab.name
+  value       = data.azurerm_resource_group.identity_lab.name
   description = "Name of the resource group created"
 }
 
@@ -33,7 +33,7 @@ output "detection_rules" {
 output "deployment_summary" {
   value = <<-EOT
 ✅ DEPLOYMENT COMPLETE!
-Resource Group: ${azurerm_resource_group.identity_lab.name}
+Resource Group: ${data.azurerm_resource_group.identity_lab.name}
 Workspace: ${azurerm_log_analytics_workspace.identity_logs.name}
 Key Vault: ${azurerm_key_vault.identity_vault.name}
 
