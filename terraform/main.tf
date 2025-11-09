@@ -17,11 +17,9 @@ provider "azurerm" {
 # ===========================
 # Resource Group
 # ===========================
-
-resource "azurerm_resource_group" "identity_lab" {
-  name     = var.resource_group_name
-  location = var.location
-  tags     = var.tags
+# Using existing resource group instead of creating new one
+data "azurerm_resource_group" "identity_lab" {
+  name = var.resource_group_name
 }
 
 
