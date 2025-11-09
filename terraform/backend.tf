@@ -9,6 +9,3 @@ terraform {
  terraform {
    backend "azurerm" {}
  }
-
-
-
