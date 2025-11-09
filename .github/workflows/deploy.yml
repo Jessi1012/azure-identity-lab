@@ -2,90 +2,45 @@ name: Deploy to Azure
 
 on:
   push:
-    branches:
-      - main
-      - feature/**
-    paths:
-      - 'terraform/**'
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Branch or tag to deploy'
-        required: false
-        default: 'main'
-
-permissions:
-  contents: read
-  id-token: write
+    branches: [main]
+    paths: ['terraform/**']
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: development
+    environment: production
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          # Use selected ref during manual dispatch; otherwise use the triggering ref
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref }}
+      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.0
 
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
-
-      - name: Debug Terraform file (temporary)
-        if: always()
-        run: |
-          echo "Ref: $GITHUB_REF"
-          echo "SHA: $GITHUB_SHA"
-          ls -la ./terraform
-          # Fixed quoting to avoid shell parse error
-          echo 'Searching for invalid action "ActionGroup" blocks in main.tf'
-          grep -n 'action \"ActionGroup\"' ./terraform/main.tf || echo "No invalid action blocks found"
-          echo "Checksum of main.tf:" && sha256sum ./terraform/main.tf || shasum -a 256 ./terraform/main.tf
-
-      - name: Verify Azure Context
-        run: |
-          echo "Showing Azure account context after login:" 
-          az account show || echo "Azure CLI context not available"
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
         with:
           scan-type: 'config'
           scan-ref: './terraform'
-        continue-on-error: false
-
-      - name: Terraform Plan
-        working-directory: ./terraform
-        env:
-          TF_IN_AUTOMATION: "true"
-          TF_INPUT: "false"
-        run: |
-          terraform plan -no-color -out=tfplan
-          terraform show -no-color tfplan | sed -n '1,300p'
+          exit-code: '1'  # Fail if HIGH/CRITICAL issues found
 
       - name: Terraform Apply
         working-directory: ./terraform
-        env:
-            TF_IN_AUTOMATION: "true"
-            TF_INPUT: "false"
-        run: terraform apply -auto-approve tfplan
-
-
+        run: terraform apply -auto-approve -var-file=terraform.tfvars
+        # THIS DEPLOYS!
 
       - name: Create Success Summary
         run: |
           echo "# ✅ Deployment Successful!" >> $GITHUB_STEP_SUMMARY
-          echo "All resources deployed with security scanning passed." >> $GITHUB_STEP_SUMMARY
+          echo "All resources deployed to Azure" >> $GITHUB_STEP_SUMMARY
