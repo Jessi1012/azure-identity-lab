@@ -68,7 +68,13 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ./terraform
-        run: terraform apply -auto-approve -var-file=./terraform/terraform.tfvars
+        run: terraform apply -auto-approve \
+           -var="resource_group_name=${{ secrets.RESOURCE_GROUP_NAME }}" \
+           -var="location=${{ secrets.LOCATION }}" \
+           -var="workspace_name=${{ secrets.WORKSPACE_NAME }}" \
+           -var="log_retention_days=${{ secrets.LOG_RETENTION_DAYS }}" \
+           -var="tags={Environment=\"Lab\",Project=\"Identity-Detection\",Owner=\"Chait\",ManagedBy=\"Terraform\"}"
+
 
 
       - name: Create Success Summary
