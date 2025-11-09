@@ -187,7 +187,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   trigger_operator  = "GreaterThan"
   trigger_threshold = 0
   
-  severity = "Critical"
+  severity = "High"
   tactics  = ["PrivilegeEscalation"]
   
   query = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
