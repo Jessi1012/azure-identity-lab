@@ -108,9 +108,17 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   
   query = file("${path.module}/../kql-queries/dormant-account-detection.kql")
   
-  incident_configuration {
-    create_incident = true
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled           = true
+      lookback_duration = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
   }
+  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
   name                       = "ImpossibleTravelDetection"
@@ -128,9 +136,17 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   
   query = file("${path.module}/../kql-queries/impossible-travel-detection.kql")
   
-  incident_configuration {
-    create_incident = true
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled           = true
+      lookback_duration = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
   }
+  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
   name                       = "FailedLoginFloodDetection"
@@ -148,9 +164,17 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   
   query = file("${path.module}/../kql-queries/failed-login-flood-detection.kql")
   
-  incident_configuration {
-    create_incident = true
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled           = true
+      lookback_duration = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
   }
+  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
  }
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
@@ -168,9 +192,17 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   
   query = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
   
-  incident_configuration {
-    create_incident = true
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled           = true
+      lookback_duration = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
   }
+  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
  }
 
 # ===========================
