@@ -3,12 +3,13 @@ let MaxTravelTime = 5h;
 let signins = SigninLogs
     | where TimeGenerated > ago(lookback)
     | where ResultType == 0
-    | extend lat = tostring(LocationDetails["Latitude"]), lon = tostring(LocationDetails["Longitude"])
+    | extend lat = toreal(LocationDetails.geoCoordinates.latitude), lon = toreal(LocationDetails.geoCoordinates.longitude)
     | project UserPrincipalName, TimeGenerated, lat, lon, IPAddress;
 signins
-| extend PrevSignInTime = prev(TimeGenerated), PrevLat = prev(lat), PrevLon = prev(lon) by UserPrincipalName
-| extend TravelDistance = geo_distance_2points(PrevLat, PrevLon, lat, lon)
+| order by UserPrincipalName, TimeGenerated asc
+| extend PrevSignInTime = prev(TimeGenerated), PrevLat = prev(lat), PrevLon = prev(lon)
+| extend TravelDistance = geo_distance_2points(toreal(PrevLon), toreal(PrevLat), toreal(lon), toreal(lat))
 | extend TravelTime = datetime_diff("minute", TimeGenerated, PrevSignInTime)
-| where TravelDistance > 1000 and TravelTime < 60 * 60 * 5  // More than 1000km traveled within 5 hours
+| where TravelDistance > 1000000 and TravelTime < 300  // More than 1000km traveled within 5 hours
 | project UserPrincipalName, TimeGenerated, IPAddress, TravelDistance, TravelTime
 | sort by TimeGenerated desc
