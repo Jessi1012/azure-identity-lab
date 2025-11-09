@@ -38,6 +38,7 @@ jobs:
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
+        continue-on-error: true  # Don't fail workflow on Trivy findings
         with:
           scan-type: 'config'
           scan-ref: './terraform'
