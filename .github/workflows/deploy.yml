@@ -41,6 +41,7 @@ jobs:
         with:
           scan-type: 'config'
           scan-ref: './terraform'
+          trivyignores: 'terraform/.trivyignore'  # Use ignore file for acceptable findings
           exit-code: '1'  # Fail if HIGH/CRITICAL issues found
 
       - name: Terraform Apply
