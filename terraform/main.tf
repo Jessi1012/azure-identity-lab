@@ -94,7 +94,7 @@ resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
 
 # Dormant account reactivation detection
 resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
-  name                       = "DormantAccountReactivation"
+  name                       = "DormantAccountReactivation-${random_string.suffix.result}"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   display_name               = "Dormant Account Reactivation Detected"
   enabled                    = true
@@ -175,7 +175,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
 
 # Privilege escalation detection
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
-  name                       = "PrivilegeEscalationDetection"
+  name                       = "PrivilegeEscalationDetection-${random_string.suffix.result}"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   display_name               = "Unauthorized Privilege Escalation"
   enabled                    = true
