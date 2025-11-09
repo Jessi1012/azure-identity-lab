@@ -121,7 +121,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
 
 # Impossible travel detection
 resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
-  name                       = "ImpossibleTravelDetection"
+  name                       = "ImpossibleTravelDetection-${random_string.suffix.result}"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   display_name               = "Impossible Travel Login"
   enabled                    = true
@@ -148,7 +148,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
 
 # Failed login flood detection (password spray)
 resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
-  name                       = "FailedLoginFloodDetection"
+  name                       = "FailedLoginFloodDetection-${random_string.suffix.result}"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   display_name               = "Failed Login Flood (Password Spray)"
   enabled                    = true
