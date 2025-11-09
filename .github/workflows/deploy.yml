@@ -2,13 +2,23 @@ name: Deploy to Azure
 
 on:
   push:
-    branches: [main]
+    branches: 
+      - main
+      - feature/test-deployment
     paths: ['terraform/**']
+  workflow_dispatch:  # Enables manual triggering from GitHub Actions UI
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: development
+    
+    env:
+      TF_VAR_resource_group_name: "Identity-Lab-RG"
+      TF_VAR_location: "eastus"
+      TF_VAR_workspace_name: "identity-lab-logs"
+      TF_VAR_log_retention_days: "30"
+      TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -20,9 +30,7 @@ jobs:
       - name: Azure Login
         uses: azure/login@v1
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}  # JSON credentials from service principal
 
       - name: Terraform Init
         working-directory: ./terraform
@@ -37,8 +45,8 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ./terraform
-        run: terraform apply -auto-approve -var-file=terraform.tfvars
-        # THIS DEPLOYS!
+        run: terraform apply -auto-approve
+        # Terraform automatically loads terraform.tfvars if present, or uses TF_VAR_* env vars
 
       - name: Create Success Summary
         run: |
