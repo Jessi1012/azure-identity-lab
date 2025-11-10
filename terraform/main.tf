@@ -303,21 +303,15 @@ resource "azurerm_security_center_subscription_pricing" "defender_vms" {
 # Azure Key Vault (Secure Secret Storage)
 # ===========================
 
-# Generate a random suffix for naming uniqueness
-resource "random_string" "suffix" {
-  length  = 6
-  special = false
-  upper   = false
-  
-  lifecycle {
-    ignore_changes = all  # Never change once created
-  }
+# Use fixed suffix to prevent creating multiple storage accounts and key vaults
+locals {
+  storage_suffix = "b54w9t"  # Match your backend storage account tfstateb54w9t
 }
 
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "identity_vault" {
-  name                       = "kv-identity-${random_string.suffix.result}"
+  name                       = "kv-identity-${local.storage_suffix}"
   location                   = data.azurerm_resource_group.identity_lab.location
   resource_group_name        = data.azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id

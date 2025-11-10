@@ -1,5 +1,5 @@
  resource "azurerm_storage_account" "tfstate" {
-   name                     = "tfstate${random_string.suffix.result}"
+   name                     = "tfstate${local.storage_suffix}"  # Use fixed suffix
    resource_group_name      = data.azurerm_resource_group.identity_lab.name
    location                 = data.azurerm_resource_group.identity_lab.location
    account_tier             = "Standard"
