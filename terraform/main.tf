@@ -249,9 +249,9 @@ resource "azurerm_key_vault" "identity_vault" {
   enable_rbac_authorization  = true  # Role Based Access Control for permissions
   
   network_acls {
-    default_action = "Deny"
+    default_action = "Allow"  # Changed from Deny to allow GitHub Actions
     bypass         = "AzureServices"  # Allow trusted Azure services
-    ip_rules       = []  # Add your IPs if needed: ["1.2.3.4/32"]
+    ip_rules       = []  # Can add specific IPs later if needed
   }
   
   tags = var.tags

@@ -16,7 +16,7 @@ jobs:
     env:
       TF_VAR_resource_group_name: "Identity-Lab-RG"
       TF_VAR_location: "eastus"
-      TF_VAR_workspace_name: "identity-lab-logs"
+      TF_VAR_workspace_name: "identity-lab-logs-v2"
       TF_VAR_log_retention_days: "30"
       TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL }}
 
