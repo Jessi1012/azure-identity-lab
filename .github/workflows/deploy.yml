@@ -4,6 +4,7 @@ on:
   push:
     branches: 
       - main  # Auto-deploy on merge to main
+      - feature/test-deployment  # Temporarily enable auto-deploy for testing
     paths: 
       - 'terraform/**'
       - 'kql-queries/**'
