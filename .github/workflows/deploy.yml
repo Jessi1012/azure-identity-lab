@@ -9,6 +9,7 @@ on:
       - 'terraform/**'
       - 'kql-queries/**'
       - 'scripts/**'
+      - '.github/workflows/**'  # Also trigger when workflow files change
   workflow_dispatch:  # Manual triggering still available
     inputs:
       environment:
