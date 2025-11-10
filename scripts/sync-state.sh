@@ -1,7 +1,7 @@
 #!/bin/bash
 # sync-state.sh - Reconcile Terraform state with actual Azure resources
 
-set -e
+set -euo pipefail
 
 echo "🔍 Checking Azure resources vs Terraform state..."
 
@@ -43,6 +43,11 @@ echo ""
 
 # 1. Check Resource Group (data source - skip)
 echo "✓ Resource Group (data source - no import needed)"
+# If RG was previously managed, remove it from state to avoid deletion attempts
+if in_state "azurerm_resource_group.identity_lab"; then
+    echo "  🧹 Removing previously-managed Resource Group from state"
+    terraform state rm azurerm_resource_group.identity_lab || true
+fi
 
 # 2. Check Log Analytics Workspace
 WORKSPACE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.OperationalInsights/workspaces/${WORKSPACE_NAME}"
@@ -86,6 +91,18 @@ if [ -n "$EXISTING_KVS" ]; then
                 terraform import "random_string.suffix" "$SUFFIX" 2>/dev/null || echo "  ℹ️  Creating new random suffix"
             fi
             import_resource "azurerm_key_vault.identity_vault" "$KV_ID"
+        fi
+
+        # Import Teams webhook secret if present
+        if az keyvault secret show --vault-name "$KV_NAME" --name "teams-webhook-url" >/dev/null 2>&1; then
+            if ! in_state "azurerm_key_vault_secret.teams_webhook"; then
+                SECRET_IMPORT_ID="https://${KV_NAME}.vault.azure.net/secrets/teams-webhook-url"
+                import_resource "azurerm_key_vault_secret.teams_webhook" "$SECRET_IMPORT_ID"
+            else
+                echo "  ✓ Key Vault secret 'teams-webhook-url' already in state"
+            fi
+        else
+            echo "  ✓ Key Vault secret 'teams-webhook-url' not found (will be created if var provided)"
         fi
     done
 else
