@@ -305,7 +305,7 @@ resource "azurerm_security_center_subscription_pricing" "defender_vms" {
 
 # Use fixed suffix to prevent creating multiple storage accounts and key vaults
 locals {
-  storage_suffix = "b54w9t"  # Match your backend storage account tfstateb54w9t
+  storage_suffix = "5n7ekf"  # Match your existing Key Vault kv-identity-5n7ekf
 }
 
 data "azurerm_client_config" "current" {}
