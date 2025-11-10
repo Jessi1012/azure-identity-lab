@@ -75,6 +75,16 @@ jobs:
           
           echo "✅ Fresh state created"
 
+      - name: Remove v2 Workspace from State (switching to v3)
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          echo "🔄 Removing v2 workspace and Sentinel from state to allow v3 creation..."
+          terraform state rm azurerm_log_analytics_workspace.identity_logs || true
+          terraform state rm azurerm_sentinel_log_analytics_workspace_onboarding.sentinel || true
+          terraform state rm time_sleep.wait_for_sentinel || true
+          echo "✅ v2 resources removed from state (they remain in Azure)"
+
       - name: Import Existing Resources into Fresh State
         working-directory: ./terraform
         continue-on-error: true
