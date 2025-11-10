@@ -30,15 +30,25 @@ data "azurerm_resource_group" "identity_lab" {
 # ===========================
 # Log Analytics Workspace
 # ===========================
-# Always use data source to reference existing workspace
-data "azurerm_log_analytics_workspace" "identity_logs" {
+# Create workspace - this is infrastructure that needs to exist first
+resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
+  location            = data.azurerm_resource_group.identity_lab.location
   resource_group_name = data.azurerm_resource_group.identity_lab.name
+
+  sku               = "PerGB2018"
+  retention_in_days = var.log_retention_days
+
+  tags = var.tags
+  
+  lifecycle {
+    prevent_destroy = true  # Protect from accidental deletion
+  }
 }
 
-# Use the workspace ID from data source
+# Use the workspace ID
 locals {
-  workspace_id = data.azurerm_log_analytics_workspace.identity_logs.id
+  workspace_id = azurerm_log_analytics_workspace.identity_logs.id
 }
 
 # ===========================
