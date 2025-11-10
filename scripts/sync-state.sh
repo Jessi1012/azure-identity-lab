@@ -27,6 +27,10 @@ in_state() {
 import_resource() {
     local tf_address=$1
     local azure_id=$2
+    if in_state "$tf_address"; then
+        echo "  ↔️  Already in state: $tf_address"
+        return 0
+    fi
     echo "  📥 Importing: $tf_address"
     terraform import "$tf_address" "$azure_id" || echo "  ⚠️  Import failed (resource may not exist)"
 }
@@ -64,11 +68,7 @@ fi
 # 3. Check Sentinel Onboarding
 SENTINEL_ID="${WORKSPACE_ID}/providers/Microsoft.SecurityInsights/onboardingStates/default"
 if resource_exists "$SENTINEL_ID"; then
-    if ! in_state "azurerm_sentinel_log_analytics_workspace_onboarding.sentinel"; then
-        import_resource "azurerm_sentinel_log_analytics_workspace_onboarding.sentinel" "$SENTINEL_ID"
-    else
-        echo "✓ Sentinel Onboarding already in state"
-    fi
+    import_resource "azurerm_sentinel_log_analytics_workspace_onboarding.sentinel" "$SENTINEL_ID"
 else
     echo "✓ Sentinel Onboarding doesn't exist (will be created)"
 fi

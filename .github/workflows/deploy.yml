@@ -3,10 +3,21 @@ name: Deploy to Azure
 on:
   push:
     branches: 
-      - main
-      - feature/test-deployment
-    paths: ['terraform/**']
-  workflow_dispatch:  # Enables manual triggering from GitHub Actions UI
+      - main  # Auto-deploy on merge to main
+    paths: 
+      - 'terraform/**'
+      - 'kql-queries/**'
+      - 'scripts/**'
+  workflow_dispatch:  # Manual triggering still available
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - production
 
 jobs:
   deploy:
@@ -18,7 +29,7 @@ jobs:
       TF_VAR_location: "eastus"
       TF_VAR_workspace_name: "identity-lab-logs-v2"
       TF_VAR_log_retention_days: "30"
-      TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL }}
+      TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL || '' }}
       # Backend authentication for Service Principal
       ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
       ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
@@ -40,6 +51,11 @@ jobs:
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
+
+      - name: Ensure RG not managed (remove from state if present)
+        working-directory: ./terraform
+        run: |
+          terraform state rm azurerm_resource_group.identity_lab || true
 
       - name: Sync State with Azure Resources
         working-directory: ./terraform
