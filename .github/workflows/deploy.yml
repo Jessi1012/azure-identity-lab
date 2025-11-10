@@ -253,6 +253,26 @@ jobs:
             -target=azurerm_sentinel_log_analytics_workspace_onboarding.sentinel \
             -target=time_sleep.wait_for_sentinel
 
+      - name: Wait for Sentinel Onboarding
+        run: |
+          echo "⏳ Waiting for Microsoft Sentinel onboarding to be present..."
+          ONBOARDED=0
+          for i in $(seq 1 20); do
+            if az rest --method GET \
+              --url "https://management.azure.com/subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/${{ env.TF_VAR_resource_group_name }}/providers/Microsoft.OperationalInsights/workspaces/${{ env.TF_VAR_workspace_name }}/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2023-02-01" \
+              --query name -o tsv >/dev/null 2>&1; then
+              ONBOARDED=1
+              break
+            fi
+            echo "  Attempt $i/20: Sentinel not onboarded yet, sleeping 20s..."
+            sleep 20
+          done
+          if [ "$ONBOARDED" -ne 1 ]; then
+            echo "❌ Sentinel not onboarded after ~7 minutes. Failing early."; exit 1
+          fi
+          echo "✅ Sentinel onboarding detected. Adding extra 30s buffer..."
+          sleep 30
+
       - name: Wait for Log Analytics Workspace to be Queryable
         continue-on-error: true
         run: |
