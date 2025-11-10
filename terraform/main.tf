@@ -82,18 +82,34 @@ resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
 
   enabled_log {
     category = "SignInLogs"  # Includes all sign-in attempts
+    
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "AuditLogs"   # Includes all administrative changes
+    
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "NonInteractiveUserSignInLogs" # Service account sign-ins
+    
+    retention_policy {
+      enabled = false
+    }
   }
 
   enabled_log {
     category = "ServicePrincipalSignInLogs"  # App sign-ins
+    
+    retention_policy {
+      enabled = false
+    }
   }
 }
 
