@@ -54,6 +54,25 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: NUCLEAR OPTION - Delete Corrupted State (ONE TIME ONLY)
+        working-directory: ./terraform
+        run: |
+          echo "🔥 DELETING CORRUPTED STATE - This will force clean start"
+          echo "After this deployment succeeds, remove this step from the workflow"
+          
+          # Delete the corrupted state file
+          az storage blob delete \
+            --account-name tfstateb54w9t \
+            --container-name tfstate \
+            --name terraform.tfstate \
+            --auth-mode login \
+            || echo "State already deleted or doesn't exist"
+          
+          # Reinitialize with fresh state
+          terraform init -reconfigure
+          
+          echo "✅ Fresh state created - Terraform will import existing resources"
+
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
