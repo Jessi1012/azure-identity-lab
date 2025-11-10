@@ -30,33 +30,15 @@ data "azurerm_resource_group" "identity_lab" {
 # ===========================
 # Log Analytics Workspace
 # ===========================
-# Conditional creation: only create if workspace doesn't exist
-resource "azurerm_log_analytics_workspace" "identity_logs" {
-  count               = var.create_workspace ? 1 : 0
-  name                = var.workspace_name
-  location            = data.azurerm_resource_group.identity_lab.location
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
-
-  sku               = "PerGB2018"
-  retention_in_days = var.log_retention_days
-
-  tags = var.tags
-  
-  lifecycle {
-    prevent_destroy = true  # Prevent accidental deletion
-  }
-}
-
-# Data source to reference existing workspace (when create_workspace = false)
-data "azurerm_log_analytics_workspace" "existing" {
-  count               = var.create_workspace ? 0 : 1
+# Always use data source to reference existing workspace
+data "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
   resource_group_name = data.azurerm_resource_group.identity_lab.name
 }
 
-# Use the existing workspace or the newly created one
+# Use the workspace ID from data source
 locals {
-  workspace_id = var.create_workspace ? azurerm_log_analytics_workspace.identity_logs[0].id : data.azurerm_log_analytics_workspace.existing[0].id
+  workspace_id = data.azurerm_log_analytics_workspace.identity_logs.id
 }
 
 # ===========================
@@ -65,7 +47,6 @@ locals {
 
 resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
   workspace_id = local.workspace_id
-  depends_on   = [azurerm_log_analytics_workspace.identity_logs]
   
   lifecycle {
     prevent_destroy = true

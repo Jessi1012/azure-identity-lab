@@ -31,7 +31,6 @@ jobs:
       TF_VAR_location: "eastus"
       TF_VAR_workspace_name: "identity-lab-logs-v2"
       TF_VAR_log_retention_days: "30"
-      TF_VAR_create_workspace: "false"  # Set to true only for FIRST deployment
       TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL || '' }}
       # Backend authentication for Service Principal
       ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
@@ -55,55 +54,11 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
-      - name: Check if First Deployment
-        id: check_deployment
-        working-directory: ./terraform
-        run: |
-          # Check if workspace exists in Azure
-          WORKSPACE_EXISTS=$(az monitor log-analytics workspace show \
-            --resource-group "$TF_VAR_resource_group_name" \
-            --workspace-name "$TF_VAR_workspace_name" \
-            --query "name" -o tsv 2>/dev/null || echo "")
-          
-          if [ -z "$WORKSPACE_EXISTS" ]; then
-            echo "🆕 FIRST DEPLOYMENT: Workspace doesn't exist"
-            echo "create_workspace=true" >> $GITHUB_OUTPUT
-            echo "TF_VAR_create_workspace=true" >> $GITHUB_ENV
-          else
-            echo "✅ INCREMENTAL DEPLOYMENT: Workspace exists"
-            echo "create_workspace=false" >> $GITHUB_OUTPUT
-            echo "TF_VAR_create_workspace=false" >> $GITHUB_ENV
-          fi
-
-      - name: Cleanup Alert Rules (if adding new queries)
-        if: steps.check_deployment.outputs.create_workspace == 'false'
-        working-directory: ./terraform
-        run: |
-          echo "🔄 INCREMENTAL MODE: Will add/update alert rules only"
-          echo "Existing workspace and infrastructure will be preserved"
-
-      - name: Clean State for Fresh Start (First Deployment Only)
-        if: steps.check_deployment.outputs.create_workspace == 'true'
-        working-directory: ./terraform
-        run: |
-          echo "🆕 FIRST DEPLOYMENT MODE: Creating all resources from scratch"
-          # Delete old state if it exists
-          az storage blob delete \
-            --account-name tfstateb54w9t \
-            --container-name tfstate \
-            --name terraform.tfstate \
-            --auth-mode login \
-            || echo "No existing state found"
-          
-          terraform init -reconfigure
-
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
           echo "📋 Planning infrastructure changes..."
-          terraform plan -out=tfplan \
-            -var="create_workspace=${TF_VAR_create_workspace}" \
-            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+          terraform plan -out=tfplan -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
