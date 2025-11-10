@@ -1,0 +1,139 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - 'terraform/**'
+      - 'kql-queries/**'
+      - '.github/workflows/**'
+
+jobs:
+  validate:
+    name: Validate Infrastructure Code
+    runs-on: ubuntu-latest
+    
+    env:
+      TF_VAR_resource_group_name: "Identity-Lab-RG"
+      TF_VAR_location: "eastus"
+      TF_VAR_workspace_name: "identity-lab-logs-v2"
+      TF_VAR_log_retention_days: "30"
+      TF_VAR_teams_webhook_url: "https://placeholder.webhook.url"
+      ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+      ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+      ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Format Check
+        working-directory: ./terraform
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan -out=tfplan
+          terraform show -json tfplan > plan.json
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-plan
+          path: terraform/plan.json
+
+      - name: Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@0.18.0
+        with:
+          scan-type: 'config'
+          scan-ref: './terraform'
+          trivyignores: 'terraform/.trivyignore'
+          exit-code: '0'  # Don't fail PR, just report
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Comment PR with Plan
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/plan.json', 'utf8');
+            const planObj = JSON.parse(plan);
+            
+            const adds = planObj.resource_changes?.filter(r => r.change.actions.includes('create')).length || 0;
+            const changes = planObj.resource_changes?.filter(r => r.change.actions.includes('update')).length || 0;
+            const deletes = planObj.resource_changes?.filter(r => r.change.actions.includes('delete')).length || 0;
+            
+            const comment = `## 📋 Terraform Plan Summary
+            
+            **Resources:**
+            - ➕ Create: ${adds}
+            - 🔄 Update: ${changes}
+            - ❌ Delete: ${deletes}
+            
+            **Status:** ${adds + changes + deletes === 0 ? '✅ No changes' : '⚠️ Changes detected'}
+            
+            <details>
+            <summary>View Plan Details</summary>
+            
+            \`\`\`
+            Run terraform plan in your PR to see full details
+            \`\`\`
+            </details>
+            
+            ---
+            🤖 Automated by GitHub Actions`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  kql-lint:
+    name: Validate KQL Queries
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check KQL Files Exist
+        run: |
+          echo "Validating KQL query files..."
+          for file in kql-queries/*.kql; do
+            if [ -f "$file" ]; then
+              echo "✅ Found: $file"
+              # Basic syntax check - ensure file is not empty
+              if [ ! -s "$file" ]; then
+                echo "❌ Error: $file is empty"
+                exit 1
+              fi
+            fi
+          done
+          echo "✅ All KQL files validated"
