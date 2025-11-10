@@ -93,18 +93,9 @@ if [ -n "$EXISTING_KVS" ]; then
             import_resource "azurerm_key_vault.identity_vault" "$KV_ID"
         fi
 
-        # Import Teams webhook secret if present
-        if az keyvault secret show --vault-name "$KV_NAME" --name "teams-webhook-url" >/dev/null 2>&1; then
-            if ! in_state "azurerm_key_vault_secret.teams_webhook"; then
-                # Use non-versioned ID for import (Terraform expects this format)
-                SECRET_IMPORT_ID="https://${KV_NAME}.vault.azure.net/secrets/teams-webhook-url"
-                import_resource "azurerm_key_vault_secret.teams_webhook" "$SECRET_IMPORT_ID"
-            else
-                echo "  ✓ Key Vault secret 'teams-webhook-url' already in state"
-            fi
-        else
-            echo "  ✓ Key Vault secret 'teams-webhook-url' not found (will be created if var provided)"
-        fi
+        # Don't import the secret - let Terraform create it fresh
+        # This avoids versioned URL import issues
+        echo "  ℹ️  Key Vault secret will be created by Terraform (not imported)"
     done
 else
     echo "✓ No existing Key Vaults (will be created)"
