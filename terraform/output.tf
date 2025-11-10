@@ -6,12 +6,12 @@ output "resource_group_name" {
 }
 
 output "workspace_id" {
-  value       = azurerm_log_analytics_workspace.identity_logs.id
+  value       = local.workspace_id
   description = "ID of Log Analytics workspace"
 }
 
 output "workspace_name" {
-  value       = azurerm_log_analytics_workspace.identity_logs.name
+  value       = var.workspace_name
   description = "Name of Log Analytics workspace"
 }
 
@@ -34,7 +34,7 @@ output "deployment_summary" {
   value = <<-EOT
 ✅ DEPLOYMENT COMPLETE!
 Resource Group: ${data.azurerm_resource_group.identity_lab.name}
-Workspace: ${azurerm_log_analytics_workspace.identity_logs.name}
+Workspace: ${var.workspace_name}
 Key Vault: ${azurerm_key_vault.identity_vault.name}
 
 4 Detection Rules Deployed:
