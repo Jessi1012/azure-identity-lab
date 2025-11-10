@@ -132,6 +132,17 @@ jobs:
           
           echo "✅ Import complete - some resources may need to be created fresh"
 
+      - name: Reset Sentinel Onboarding (force fresh bind)
+        continue-on-error: true
+        run: |
+          echo "♻️ Forcing fresh Sentinel onboarding to avoid stale workspace GUID references..."
+          # Delete existing onboarding state if present (ignore 404)
+          az rest --method DELETE \
+            --url "https://management.azure.com/subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/${{ env.TF_VAR_resource_group_name }}/providers/Microsoft.OperationalInsights/workspaces/${{ env.TF_VAR_workspace_name }}/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2023-02-01" \
+            || true
+          # Give the platform a few seconds to settle
+          sleep 15
+
       - name: Grant Service Principal Key Vault Permissions
         continue-on-error: true
         run: |
