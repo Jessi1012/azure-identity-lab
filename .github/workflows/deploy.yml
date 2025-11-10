@@ -238,20 +238,21 @@ jobs:
             echo "✅ No alert rules to delete"
           fi
 
-      - name: Terraform Plan
+      - name: Terraform Plan (Phase 1 - Workspace + Sentinel)
         working-directory: ./terraform
         run: |
-          echo "📋 Planning infrastructure changes..."
-          terraform plan -out=tfplan -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+          echo "📋 Planning core infra only (workspace + sentinel)..."
+          terraform plan -out=tfplan-core \
+            -target=azurerm_log_analytics_workspace.identity_logs \
+            -target=azurerm_sentinel_log_analytics_workspace_onboarding.sentinel \
+            -target=time_sleep.wait_for_sentinel \
+            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
       - name: Terraform Apply (Phase 1 - Workspace + Sentinel)
         working-directory: ./terraform
         run: |
-          echo "🚀 Applying core infra (workspace + sentinel) first to avoid query readiness races..."
-          terraform apply -auto-approve \
-            -target=azurerm_log_analytics_workspace.identity_logs \
-            -target=azurerm_sentinel_log_analytics_workspace_onboarding.sentinel \
-            -target=time_sleep.wait_for_sentinel
+          echo "🚀 Applying core infra (workspace + sentinel) plan..."
+          terraform apply -auto-approve tfplan-core
 
       - name: Wait for Sentinel Onboarding
         run: |
@@ -272,6 +273,18 @@ jobs:
           fi
           echo "✅ Sentinel onboarding detected. Adding extra 30s buffer..."
           sleep 30
+
+      - name: Terraform Plan (Phase 2 - Sentinel Alert Rules)
+        working-directory: ./terraform
+        run: |
+          echo "📋 Planning Sentinel alert rules after onboarding..."
+          terraform plan -out=tfplan-rules \
+            -target='azurerm_sentinel_alert_rule_scheduled.dormant_account' \
+            -target='azurerm_sentinel_alert_rule_scheduled.impossible_travel' \
+            -target='azurerm_sentinel_alert_rule_scheduled.failed_login_flood' \
+            -target='azurerm_sentinel_alert_rule_scheduled.privilege_escalation' \
+            -target='azurerm_sentinel_alert_rule_scheduled.vm_deployment_activity' \
+            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
       - name: Wait for Log Analytics Workspace to be Queryable
         continue-on-error: true
@@ -318,12 +331,8 @@ jobs:
       - name: Terraform Apply (Phase 2 - Sentinel Alert Rules)
         working-directory: ./terraform
         run: |
-          echo "🚀 Applying Sentinel alert rules after readiness..."
-          terraform apply -auto-approve \
-            -target='azurerm_sentinel_alert_rule_scheduled.dormant_account' \
-            -target='azurerm_sentinel_alert_rule_scheduled.impossible_travel' \
-            -target='azurerm_sentinel_alert_rule_scheduled.failed_login_flood' \
-            -target='azurerm_sentinel_alert_rule_scheduled.privilege_escalation'
+          echo "🚀 Applying Sentinel alert rules plan..."
+          terraform apply -auto-approve tfplan-rules
 
       - name: Terraform Apply (Phase 3 - Converge All)
         working-directory: ./terraform
