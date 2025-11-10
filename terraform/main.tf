@@ -243,6 +243,40 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   ]
  }
 
+# Detect Azure VM/Deployment activity spikes
+resource "azurerm_sentinel_alert_rule_scheduled" "vm_deployment_activity" {
+  name                       = "VMDeploymentActivity"
+  log_analytics_workspace_id = local.workspace_id
+  display_name               = "Azure VM/Deployment Activity"
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P7D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "High"
+  tactics  = ["Execution"]
+
+  query = file("${path.module}/../kql-queries/vm-deployment-activity.kql")
+
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
+  }
+
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
+}
+
 # ===========================
 # Defender for Cloud (Security Score)
 # ===========================
