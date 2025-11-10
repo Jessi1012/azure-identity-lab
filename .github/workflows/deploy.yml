@@ -41,6 +41,20 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: Sync State with Azure Resources
+        working-directory: ./terraform
+        run: |
+          echo "🔄 Reconciling Terraform state with actual Azure resources..."
+          chmod +x ../scripts/sync-state.sh
+          bash ../scripts/sync-state.sh || echo "⚠️ State sync encountered issues, continuing..."
+        continue-on-error: true  # Don't fail if sync has issues
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          echo "📋 Planning infrastructure changes..."
+          terraform plan -out=tfplan
+
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
         continue-on-error: true  # Don't fail workflow on Trivy findings
@@ -52,7 +66,7 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ./terraform
-        run: terraform apply -auto-approve
+        run: terraform apply tfplan
         # Terraform automatically loads terraform.tfvars if present, or uses TF_VAR_* env vars
 
       - name: Create Success Summary
