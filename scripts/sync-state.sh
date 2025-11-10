@@ -96,6 +96,7 @@ if [ -n "$EXISTING_KVS" ]; then
         # Import Teams webhook secret if present
         if az keyvault secret show --vault-name "$KV_NAME" --name "teams-webhook-url" >/dev/null 2>&1; then
             if ! in_state "azurerm_key_vault_secret.teams_webhook"; then
+                # Use non-versioned ID for import (Terraform expects this format)
                 SECRET_IMPORT_ID="https://${KV_NAME}.vault.azure.net/secrets/teams-webhook-url"
                 import_resource "azurerm_key_vault_secret.teams_webhook" "$SECRET_IMPORT_ID"
             else

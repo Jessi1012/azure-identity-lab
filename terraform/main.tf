@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 }
 
@@ -45,6 +49,12 @@ resource "azurerm_log_analytics_workspace" "identity_logs" {
 resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
   workspace_id = azurerm_log_analytics_workspace.identity_logs.id
   depends_on   = [azurerm_log_analytics_workspace.identity_logs]
+}
+
+# Wait for Sentinel API to fully propagate before creating alert rules
+resource "time_sleep" "wait_for_sentinel" {
+  depends_on      = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  create_duration = "60s"
 }
 
 # ===========================
@@ -122,7 +132,10 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
       reopen_closed_incidents = false
     }
   }
-  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
   name                       = "ImpossibleTravelDetection"
@@ -150,7 +163,10 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
       reopen_closed_incidents = false
     }
   }
-  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
   name                       = "FailedLoginFloodDetection"
@@ -178,7 +194,10 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
       reopen_closed_incidents = false
     }
   }
-  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
  }
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
@@ -206,7 +225,10 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
       reopen_closed_incidents = false
     }
   }
-  depends_on = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
  }
 
 # ===========================
@@ -277,5 +299,9 @@ resource "azurerm_key_vault_secret" "teams_webhook" {
   key_vault_id = azurerm_key_vault.identity_vault.id
 
   depends_on = [azurerm_role_assignment.keyvault_admin]
+
+  lifecycle {
+    ignore_changes = [value]  # Ignore changes to secret value after creation
+  }
 }
 

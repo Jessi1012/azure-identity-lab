@@ -56,6 +56,11 @@ jobs:
         working-directory: ./terraform
         run: |
           terraform state rm azurerm_resource_group.identity_lab || true
+          echo "🧹 Cleaning up any orphaned alert rule state..."
+          terraform state rm azurerm_sentinel_alert_rule_scheduled.dormant_account || true
+          terraform state rm azurerm_sentinel_alert_rule_scheduled.impossible_travel || true
+          terraform state rm azurerm_sentinel_alert_rule_scheduled.failed_login_flood || true
+          terraform state rm azurerm_sentinel_alert_rule_scheduled.privilege_escalation || true
 
       - name: Sync State with Azure Resources
         working-directory: ./terraform
