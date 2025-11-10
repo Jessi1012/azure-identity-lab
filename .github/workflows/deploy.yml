@@ -188,6 +188,34 @@ jobs:
           echo "📋 Planning infrastructure changes..."
           terraform plan -out=tfplan -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
+      - name: Wait for Log Analytics Workspace to be Queryable
+        continue-on-error: true
+        run: |
+          echo "⏳ Waiting for Log Analytics workspace to be fully queryable..."
+          # Get workspace GUID (customerId)
+          CUSTOMER_ID=$(az monitor log-analytics workspace show \
+            --resource-group "${{ env.TF_VAR_resource_group_name }}" \
+            --workspace-name "${{ env.TF_VAR_workspace_name }}" \
+            --query customerId -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$CUSTOMER_ID" ]; then
+            echo "ℹ️ Workspace not found yet (likely first run) - relying on Terraform time_sleep to wait."
+            exit 0
+          fi
+
+          echo "Workspace customerId: $CUSTOMER_ID"
+          READY=0
+          for i in $(seq 1 15); do
+            az monitor log-analytics query -w "$CUSTOMER_ID" --analytics-query "print 1" -o none 2>/dev/null && READY=1 && break || true
+            echo "  Attempt $i/15: not ready yet, sleeping 20s..."
+            sleep 20
+          done
+          if [ "$READY" -eq 1 ]; then
+            echo "✅ Workspace is queryable. Proceeding to apply."
+          else
+            echo "⚠️ Workspace still not queryable after ~5 minutes. Applying anyway (Terraform has additional wait)."
+          fi
+
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
         continue-on-error: true  # Don't fail workflow on Trivy findings

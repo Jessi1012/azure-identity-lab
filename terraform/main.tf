@@ -66,7 +66,7 @@ resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
 # Wait for Sentinel API to fully propagate before creating alert rules
 resource "time_sleep" "wait_for_sentinel" {
   depends_on      = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
-  create_duration = "60s"
+  create_duration = "180s" # Give LA workspace + Sentinel more time to become queryable
 }
 
 # ===========================
