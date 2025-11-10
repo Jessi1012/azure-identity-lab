@@ -73,45 +73,55 @@ resource "time_sleep" "wait_for_sentinel" {
 # Azure AD Diagnostic Settings (send Logs to Log Analytics)
 # ===========================
 
-# NOTE: Service Principal has been granted Azure AD permissions
-# Diagnostic settings will now be managed automatically by Terraform
+# NOTE: Azure AD diagnostic settings require special tenant-level permissions
+# that are difficult to grant to Service Principals programmatically.
+# 
+# MANUAL SETUP (2 minutes in Azure Portal):
+# 1. Go to Azure Active Directory → Diagnostic settings
+# 2. Click "+ Add diagnostic setting"
+# 3. Name: SendLogsToSentinel
+# 4. Check: SignInLogs, AuditLogs, NonInteractiveUserSignInLogs, ServicePrincipalSignInLogs
+# 5. Destination: Send to Log Analytics workspace → identity-lab-logs-v3
+# 6. Save
+#
+# Once configured, Azure AD logs will automatically flow to Sentinel!
 
-resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
-  name                       = "SendLogsToSentinel"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
-
-  enabled_log {
-    category = "SignInLogs"  # Includes all sign-in attempts
-    
-    retention_policy {
-      enabled = false
-    }
-  }
-
-  enabled_log {
-    category = "AuditLogs"   # Includes all administrative changes
-    
-    retention_policy {
-      enabled = false
-    }
-  }
-
-  enabled_log {
-    category = "NonInteractiveUserSignInLogs" # Service account sign-ins
-    
-    retention_policy {
-      enabled = false
-    }
-  }
-
-  enabled_log {
-    category = "ServicePrincipalSignInLogs"  # App sign-ins
-    
-    retention_policy {
-      enabled = false
-    }
-  }
-}
+# resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
+#   name                       = "SendLogsToSentinel"
+#   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+# 
+#   enabled_log {
+#     category = "SignInLogs"  # Includes all sign-in attempts
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "AuditLogs"   # Includes all administrative changes
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "NonInteractiveUserSignInLogs" # Service account sign-ins
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "ServicePrincipalSignInLogs"  # App sign-ins
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# }
 
 # ===========================
 # Sentinel Detection Rules
