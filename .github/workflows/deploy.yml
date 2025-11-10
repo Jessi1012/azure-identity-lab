@@ -27,6 +27,7 @@ jobs:
     environment: development
     
     env:
+      NUKE_STATE: "false"  # Set to "true" only for one-time clean reset
       TF_VAR_resource_group_name: "Identity-Lab-RG"
       TF_VAR_location: "eastus"
       TF_VAR_workspace_name: "identity-lab-logs-v2"
@@ -55,6 +56,7 @@ jobs:
         run: terraform init
 
       - name: NUCLEAR OPTION - Delete Corrupted State (ONE TIME ONLY)
+        if: env.NUKE_STATE == 'true'
         working-directory: ./terraform
         run: |
           echo "🔥 DELETING CORRUPTED STATE - This will force clean start"
@@ -188,6 +190,15 @@ jobs:
           echo "📋 Planning infrastructure changes..."
           terraform plan -out=tfplan -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
+      - name: Terraform Apply (Phase 1 - Workspace + Sentinel)
+        working-directory: ./terraform
+        run: |
+          echo "🚀 Applying core infra (workspace + sentinel) first to avoid query readiness races..."
+          terraform apply -auto-approve \
+            -target=azurerm_log_analytics_workspace.identity_logs \
+            -target=azurerm_sentinel_log_analytics_workspace_onboarding.sentinel \
+            -target=time_sleep.wait_for_sentinel
+
       - name: Wait for Log Analytics Workspace to be Queryable
         continue-on-error: true
         run: |
@@ -205,15 +216,20 @@ jobs:
 
           echo "Workspace customerId: $CUSTOMER_ID"
           READY=0
-          for i in $(seq 1 15); do
-            az monitor log-analytics query -w "$CUSTOMER_ID" --analytics-query "print 1" -o none 2>/dev/null && READY=1 && break || true
-            echo "  Attempt $i/15: not ready yet, sleeping 20s..."
+          for i in $(seq 1 30); do
+            if az monitor log-analytics query -w "$CUSTOMER_ID" --analytics-query "print 1" -o none 2>/dev/null; then
+              READY=1
+              break
+            fi
+            echo "  Attempt $i/30: not ready yet, sleeping 20s..."
             sleep 20
           done
           if [ "$READY" -eq 1 ]; then
-            echo "✅ Workspace is queryable. Proceeding to apply."
+            echo "✅ Workspace is queryable. Waiting an extra 60s for Sentinel content services..."
+            sleep 60
           else
-            echo "⚠️ Workspace still not queryable after ~5 minutes. Applying anyway (Terraform has additional wait)."
+            echo "❌ Workspace not queryable after ~10 minutes. Failing early to avoid flaky rule creation."
+            exit 1
           fi
 
       - name: Security Scan (Trivy)
@@ -225,9 +241,21 @@ jobs:
           trivyignores: 'terraform/.trivyignore'  # Use ignore file for acceptable findings
           exit-code: '1'  # Fail if HIGH/CRITICAL issues found
 
-      - name: Terraform Apply
+      - name: Terraform Apply (Phase 2 - Sentinel Alert Rules)
         working-directory: ./terraform
-        run: terraform apply tfplan
+        run: |
+          echo "🚀 Applying Sentinel alert rules after readiness..."
+          terraform apply -auto-approve \
+            -target='azurerm_sentinel_alert_rule_scheduled.dormant_account' \
+            -target='azurerm_sentinel_alert_rule_scheduled.impossible_travel' \
+            -target='azurerm_sentinel_alert_rule_scheduled.failed_login_flood' \
+            -target='azurerm_sentinel_alert_rule_scheduled.privilege_escalation'
+
+      - name: Terraform Apply (Phase 3 - Converge All)
+        working-directory: ./terraform
+        run: |
+          echo "🔁 Final converge apply to ensure full state sync..."
+          terraform apply -auto-approve -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
         # Terraform automatically loads terraform.tfvars if present, or uses TF_VAR_* env vars
 
       - name: Create Success Summary
