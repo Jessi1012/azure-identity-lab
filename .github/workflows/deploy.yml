@@ -83,6 +83,12 @@ jobs:
           bash ../scripts/sync-state.sh || echo "⚠️ State sync encountered issues, continuing..."
         continue-on-error: true  # Don't fail if sync has issues
 
+      - name: Terraform Refresh
+        working-directory: ./terraform
+        run: |
+          echo "🔄 Refreshing Terraform state from Azure..."
+          terraform refresh -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
