@@ -73,44 +73,29 @@ resource "time_sleep" "wait_for_sentinel" {
 # Azure AD Diagnostic Settings (send Logs to Log Analytics)
 # ===========================
 
-# NOTE: Commented out - requires special Azure AD permissions on service principal
-# To enable, grant the SP "Reports Reader" role in Azure AD:
-#   az ad app permission add --id <app-id> --api 00000003-0000-0000-c000-000000000000 --api-permissions 230c1aed-a721-4c5d-9cb4-a90514e508ef=Role
-#   az ad app permission grant --id <app-id> --api 00000003-0000-0000-c000-000000000000
-# Or manually enable diagnostic settings in Azure Portal: Azure Active Directory → Diagnostic settings
+# NOTE: Service Principal has been granted Azure AD permissions
+# Diagnostic settings will now be managed automatically by Terraform
 
-# resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
-#   name                       = "SendLogsToSentinel"
-#   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
-# 
-#   enabled_log {
-#     category = "SignInLogs"  # Includes all sign-in attempts
-#     retention_policy {
-#       enabled = false
-#     }
-#   }
-# 
-#   enabled_log {
-#     category = "AuditLogs"   # Includes all administrative changes
-#     retention_policy {
-#       enabled = false
-#     }
-#   }
-# 
-#   enabled_log {
-#     category = "NonInteractiveUserSignInLogs" # Service account sign-ins
-#     retention_policy {
-#       enabled = false
-#     }
-#   }
-# 
-#   enabled_log {
-#     category = "ServicePrincipalSignInLogs"  # App sign-ins
-#     retention_policy {
-#       enabled = false
-#     }
-#   }
-# }
+resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
+  name                       = "SendLogsToSentinel"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+
+  enabled_log {
+    category = "SignInLogs"  # Includes all sign-in attempts
+  }
+
+  enabled_log {
+    category = "AuditLogs"   # Includes all administrative changes
+  }
+
+  enabled_log {
+    category = "NonInteractiveUserSignInLogs" # Service account sign-ins
+  }
+
+  enabled_log {
+    category = "ServicePrincipalSignInLogs"  # App sign-ins
+  }
+}
 
 # ===========================
 # Sentinel Detection Rules
