@@ -32,6 +32,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "create_workspace" {
+  description = "Set to true for first deployment to create workspace. Set to false after initial deployment to use existing workspace."
+  type        = bool
+  default     = false  # Default to false to prevent recreation
+}
+
 variable "tags" {
   description = "A set of tags (key-value pairs) to label all Azure resources, useful for organization and billing."
   type        = map(string)

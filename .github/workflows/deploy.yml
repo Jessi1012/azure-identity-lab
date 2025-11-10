@@ -31,6 +31,7 @@ jobs:
       TF_VAR_location: "eastus"
       TF_VAR_workspace_name: "identity-lab-logs-v2"
       TF_VAR_log_retention_days: "30"
+      TF_VAR_create_workspace: "false"  # Set to true only for FIRST deployment
       TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL || '' }}
       # Backend authentication for Service Principal
       ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
@@ -54,47 +55,55 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
-      - name: Cleanup Orphaned Azure Resources
+      - name: Check if First Deployment
+        id: check_deployment
         working-directory: ./terraform
         run: |
-          echo "🧹 Deleting orphaned Azure resources with wrong references..."
-          chmod +x ../scripts/cleanup-azure.sh
-          bash ../scripts/cleanup-azure.sh || echo "⚠️ Cleanup had issues, continuing..."
-        continue-on-error: true
+          # Check if workspace exists in Azure
+          WORKSPACE_EXISTS=$(az monitor log-analytics workspace show \
+            --resource-group "$TF_VAR_resource_group_name" \
+            --workspace-name "$TF_VAR_workspace_name" \
+            --query "name" -o tsv 2>/dev/null || echo "")
+          
+          if [ -z "$WORKSPACE_EXISTS" ]; then
+            echo "🆕 FIRST DEPLOYMENT: Workspace doesn't exist"
+            echo "create_workspace=true" >> $GITHUB_OUTPUT
+            echo "TF_VAR_create_workspace=true" >> $GITHUB_ENV
+          else
+            echo "✅ INCREMENTAL DEPLOYMENT: Workspace exists"
+            echo "create_workspace=false" >> $GITHUB_OUTPUT
+            echo "TF_VAR_create_workspace=false" >> $GITHUB_ENV
+          fi
 
-      - name: Ensure RG not managed (remove from state if present)
+      - name: Cleanup Alert Rules (if adding new queries)
+        if: steps.check_deployment.outputs.create_workspace == 'false'
         working-directory: ./terraform
         run: |
-          echo "🧹 Removing all resources from state to force clean sync..."
-          terraform state rm azurerm_resource_group.identity_lab || true
-          terraform state rm azurerm_log_analytics_workspace.identity_logs || true
-          terraform state rm azurerm_sentinel_log_analytics_workspace_onboarding.sentinel || true
-          terraform state rm azurerm_sentinel_alert_rule_scheduled.dormant_account || true
-          terraform state rm azurerm_sentinel_alert_rule_scheduled.impossible_travel || true
-          terraform state rm azurerm_sentinel_alert_rule_scheduled.failed_login_flood || true
-          terraform state rm azurerm_sentinel_alert_rule_scheduled.privilege_escalation || true
-          terraform state rm azurerm_key_vault_secret.teams_webhook || true
-          echo "✅ State cleaned - all resources will be synced fresh"
+          echo "🔄 INCREMENTAL MODE: Will add/update alert rules only"
+          echo "Existing workspace and infrastructure will be preserved"
 
-      - name: Sync State with Azure Resources
+      - name: Clean State for Fresh Start (First Deployment Only)
+        if: steps.check_deployment.outputs.create_workspace == 'true'
         working-directory: ./terraform
         run: |
-          echo "🔄 Reconciling Terraform state with actual Azure resources..."
-          chmod +x ../scripts/sync-state.sh
-          bash ../scripts/sync-state.sh || echo "⚠️ State sync encountered issues, continuing..."
-        continue-on-error: true  # Don't fail if sync has issues
-
-      - name: Terraform Refresh
-        working-directory: ./terraform
-        run: |
-          echo "🔄 Refreshing Terraform state from Azure..."
-          terraform refresh -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+          echo "🆕 FIRST DEPLOYMENT MODE: Creating all resources from scratch"
+          # Delete old state if it exists
+          az storage blob delete \
+            --account-name tfstateb54w9t \
+            --container-name tfstate \
+            --name terraform.tfstate \
+            --auth-mode login \
+            || echo "No existing state found"
+          
+          terraform init -reconfigure
 
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
           echo "📋 Planning infrastructure changes..."
-          terraform plan -out=tfplan
+          terraform plan -out=tfplan \
+            -var="create_workspace=${TF_VAR_create_workspace}" \
+            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0

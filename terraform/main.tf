@@ -30,16 +30,33 @@ data "azurerm_resource_group" "identity_lab" {
 # ===========================
 # Log Analytics Workspace
 # ===========================
-
+# Conditional creation: only create if workspace doesn't exist
 resource "azurerm_log_analytics_workspace" "identity_logs" {
+  count               = var.create_workspace ? 1 : 0
   name                = var.workspace_name
   location            = data.azurerm_resource_group.identity_lab.location
   resource_group_name = data.azurerm_resource_group.identity_lab.name
 
-  sku               = "PerGB2018"        # Pricing plan
+  sku               = "PerGB2018"
   retention_in_days = var.log_retention_days
 
   tags = var.tags
+  
+  lifecycle {
+    prevent_destroy = true  # Prevent accidental deletion
+  }
+}
+
+# Data source to reference existing workspace (when create_workspace = false)
+data "azurerm_log_analytics_workspace" "existing" {
+  count               = var.create_workspace ? 0 : 1
+  name                = var.workspace_name
+  resource_group_name = data.azurerm_resource_group.identity_lab.name
+}
+
+# Use the existing workspace or the newly created one
+locals {
+  workspace_id = var.create_workspace ? azurerm_log_analytics_workspace.identity_logs[0].id : data.azurerm_log_analytics_workspace.existing[0].id
 }
 
 # ===========================
@@ -47,8 +64,12 @@ resource "azurerm_log_analytics_workspace" "identity_logs" {
 # ===========================
 
 resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
-  workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  workspace_id = local.workspace_id
   depends_on   = [azurerm_log_analytics_workspace.identity_logs]
+  
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Wait for Sentinel API to fully propagate before creating alert rules
@@ -108,7 +129,7 @@ resource "time_sleep" "wait_for_sentinel" {
 
 resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   name                       = "DormantAccountReactivation"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Dormant Account Reactivation Detected"
   
   enabled           = true
@@ -139,7 +160,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
   name                       = "ImpossibleTravelDetection"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Impossible Travel Login"
   
   enabled           = true
@@ -170,7 +191,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
  }
  resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
   name                       = "FailedLoginFloodDetection"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Failed Login Flood (Password Spray)"
   
   enabled           = true
@@ -201,7 +222,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
  }
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Unauthorized Privilege Escalation"
   
   enabled           = true
@@ -262,6 +283,10 @@ resource "random_string" "suffix" {
   length  = 6
   special = false
   upper   = false
+  
+  lifecycle {
+    ignore_changes = all  # Never change once created
+  }
 }
 
 data "azurerm_client_config" "current" {}
@@ -283,6 +308,11 @@ resource "azurerm_key_vault" "identity_vault" {
   }
   
   tags = var.tags
+  
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [name]  # Keep same name on subsequent runs
+  }
 }
 
 
