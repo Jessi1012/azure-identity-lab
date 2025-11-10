@@ -22,7 +22,7 @@ variable "location" {
 variable "workspace_name" {
   description = "Name of the Log Analytics Workspace. This name must be globally unique."
   type        = string
-  default     = "identity-lab-logs-v2"  # Changed to avoid soft-delete conflict
+  default     = "identity-lab-logs-v3"  # Fresh workspace to avoid GUID caching issues
   # If the name is already taken, change it to something like 'identity-lab-logs-yourname-2025'
 }
 
