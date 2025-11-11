@@ -97,12 +97,18 @@ jobs:
             console.log(\`Created issue #\${issue.data.number}\`);
 
       - name: Send Notification
-        if: steps.plan.outputs.status == 'drift_detected' && secrets.TF_VAR_TEAMS_WEBHOOK_URL
+        if: steps.plan.outputs.status == 'drift_detected'
+        env:
+          WEBHOOK_URL: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL }}
         run: |
-          curl -X POST "${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "title": "⚠️ Infrastructure Drift Detected",
-              "text": "Configuration drift detected in Azure Sentinel Lab. Check GitHub Issues for details.",
-              "themeColor": "FFA500"
-            }'
+          if [ -n "$WEBHOOK_URL" ]; then
+            curl -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "title": "⚠️ Infrastructure Drift Detected",
+                "text": "Configuration drift detected in Azure Sentinel Lab. Check GitHub Issues for details.",
+                "themeColor": "FFA500"
+              }'
+          else
+            echo "Teams webhook not configured, skipping notification"
+          fi
