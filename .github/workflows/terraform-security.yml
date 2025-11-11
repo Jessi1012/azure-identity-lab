@@ -11,6 +11,11 @@ on:
     paths:
       - 'terraform/**'
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   tfsec:
     name: tfsec Security Scanner

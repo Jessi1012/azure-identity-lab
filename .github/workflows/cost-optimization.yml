@@ -34,7 +34,7 @@ jobs:
           echo "- **Total: ~\$9/month**" >> cost_report.md
 
       - name: Upload Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: cost-report
           path: cost_report.md
