@@ -83,21 +83,43 @@ Check GitHub Actions: https://github.com/Jessi1012/azure-identity-lab/actions
 
 ## 🛡️ Additional Security Measures
 
-### **Enable GitHub Secret Scanning**
+### **GitHub Security Features (Enabled)**
+
+#### **1. Dependabot (Automated Dependency Updates)**
+✅ **Status:** Configured in `.github/dependabot.yml`
+- Monitors Terraform providers, GitHub Actions, and Python dependencies
+- Weekly scans every Monday at 9 AM
+- Automatically creates PRs for security updates
+- View alerts: https://github.com/Jessi1012/azure-identity-lab/security/dependabot
+
+#### **2. CodeQL Security Scanning**
+✅ **Status:** Configured in `.github/workflows/codeql.yml`
+- Scans JavaScript and Python code for security vulnerabilities
+- Runs on every push and weekly schedule
+- Detects SQL injection, XSS, command injection, etc.
+- View results: https://github.com/Jessi1012/azure-identity-lab/security/code-scanning
+
+#### **3. Terraform Security Scanning**
+✅ **Status:** Configured in `.github/workflows/terraform-security.yml`
+- **tfsec:** Scans Terraform for Azure security misconfigurations
+- **Checkov:** Validates compliance with security best practices
+- Runs on every Terraform change
+- Blocks merges if critical issues found
+- View results: https://github.com/Jessi1012/azure-identity-lab/security/code-scanning
+
+#### **4. Secret Scanning**
+⚠️ **Action Required:** Enable manually
 1. Go to: https://github.com/Jessi1012/azure-identity-lab/settings/security_analysis
 2. Enable "Secret scanning"
-3. GitHub will alert you if secrets are accidentally committed
+3. Enable "Push protection" to block commits with secrets
+4. GitHub will alert you if secrets are accidentally committed
 
-### **Enable Dependabot**
-1. Go to: https://github.com/Jessi1012/azure-identity-lab/settings/security_analysis
-2. Enable "Dependabot alerts"
-3. Automatically get notified of vulnerable dependencies
-
-### **Use Branch Protection**
-1. Go to: https://github.com/Jessi1012/azure-identity-lab/settings/branches
-2. Add rule for `main` branch
-3. Require pull request reviews before merging
-4. Require status checks to pass
+#### **5. Branch Protection (Recommended)**
+⚠️ **Action Required:** Configure manually
+- See: `.github/BRANCH_PROTECTION.md` for setup instructions
+- Requires pull request reviews before merging
+- Requires all security checks to pass
+- Prevents direct pushes to `main`
 
 ---
 
