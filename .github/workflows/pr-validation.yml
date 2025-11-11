@@ -55,11 +55,13 @@ jobs:
       - name: Terraform Plan
         working-directory: ./terraform
         run: |
-          terraform plan -out=tfplan
-          terraform show -json tfplan > plan.json
+          terraform plan -out=tfplan -no-color
+          terraform show -json tfplan > plan.json 2>&1
+        continue-on-error: true
 
       - name: Upload Plan Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: terraform-plan
           path: terraform/plan.json
@@ -92,35 +94,36 @@ jobs:
       - name: Comment PR with Plan
         uses: actions/github-script@v6
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('terraform/plan.json', 'utf8');
-            const planObj = JSON.parse(plan);
             
-            const adds = planObj.resource_changes?.filter(r => r.change.actions.includes('create')).length || 0;
-            const changes = planObj.resource_changes?.filter(r => r.change.actions.includes('update')).length || 0;
-            const deletes = planObj.resource_changes?.filter(r => r.change.actions.includes('delete')).length || 0;
+            let comment = `## 📋 Terraform Plan Summary\n\n`;
             
-            const comment = `## 📋 Terraform Plan Summary
+            try {
+              if (!fs.existsSync('terraform/plan.json')) {
+                comment += '⚠️ Plan file not found. Check workflow logs for details.\n';
+              } else {
+                const plan = fs.readFileSync('terraform/plan.json', 'utf8');
+                const planObj = JSON.parse(plan);
+                
+                const adds = planObj.resource_changes?.filter(r => r.change.actions.includes('create')).length || 0;
+                const changes = planObj.resource_changes?.filter(r => r.change.actions.includes('update')).length || 0;
+                const deletes = planObj.resource_changes?.filter(r => r.change.actions.includes('delete')).length || 0;
+                
+                comment += `**Resources:**\n`;
+                comment += `- ➕ Create: ${adds}\n`;
+                comment += `- 🔄 Update: ${changes}\n`;
+                comment += `- ❌ Delete: ${deletes}\n\n`;
+                comment += `**Status:** ${adds + changes + deletes === 0 ? '✅ No changes' : '⚠️ Changes detected'}\n`;
+              }
+            } catch (error) {
+              comment += `⚠️ Unable to parse plan file: ${error.message}\n`;
+              comment += `\nCheck the workflow logs for the raw plan output.\n`;
+            }
             
-            **Resources:**
-            - ➕ Create: ${adds}
-            - 🔄 Update: ${changes}
-            - ❌ Delete: ${deletes}
-            
-            **Status:** ${adds + changes + deletes === 0 ? '✅ No changes' : '⚠️ Changes detected'}
-            
-            <details>
-            <summary>View Plan Details</summary>
-            
-            \`\`\`
-            Run terraform plan in your PR to see full details
-            \`\`\`
-            </details>
-            
-            ---
-            🤖 Automated by GitHub Actions`;
+            comment += `\n---\n🤖 Automated by GitHub Actions`;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
