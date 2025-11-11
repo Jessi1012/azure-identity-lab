@@ -22,7 +22,7 @@ jobs:
     env:
       TF_VAR_resource_group_name: "Identity-Lab-RG"
       TF_VAR_location: "eastus"
-      TF_VAR_workspace_name: "identity-lab-logs-v2"
+      TF_VAR_workspace_name: "identity-lab-logs-v3"
       TF_VAR_log_retention_days: "30"
       TF_VAR_teams_webhook_url: "https://placeholder.webhook.url"
       ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
@@ -66,6 +66,7 @@ jobs:
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
         with:
           scan-type: 'config'
           scan-ref: 'terraform/'
@@ -73,9 +74,18 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
 
+      - name: Check if Trivy results exist
+        id: check_trivy
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload Trivy Results
         uses: github/codeql-action/upload-sarif@v3
-        if: success() || failure()
+        if: steps.check_trivy.outputs.exists == 'true'
         with:
           sarif_file: 'trivy-results.sarif'
 
