@@ -21,9 +21,16 @@ provider "azurerm" {
 # ===========================
 # Resource Group
 # ===========================
-# Using existing resource group instead of creating new one
-data "azurerm_resource_group" "identity_lab" {
-  name = var.resource_group_name
+# Create resource group (Terraform fully manages it)
+resource "azurerm_resource_group" "identity_lab" {
+  name     = var.resource_group_name
+  location = var.location
+
+  tags = var.tags
+
+  lifecycle {
+    prevent_destroy = false # Allow destruction for full automation
+  }
 }
 
 
@@ -33,16 +40,16 @@ data "azurerm_resource_group" "identity_lab" {
 # Create workspace - this is infrastructure that needs to exist first
 resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
-  location            = data.azurerm_resource_group.identity_lab.location
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
+  location            = azurerm_resource_group.identity_lab.location
+  resource_group_name = azurerm_resource_group.identity_lab.name
 
   sku               = "PerGB2018"
   retention_in_days = var.log_retention_days
 
   tags = var.tags
-  
+
   lifecycle {
-    prevent_destroy = true  # Protect from accidental deletion
+    prevent_destroy = false # Allow destruction for full automation
   }
 }
 
@@ -57,9 +64,9 @@ locals {
 
 resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
   workspace_id = local.workspace_id
-  
+
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false # Allow destruction for full automation
   }
 }
 
@@ -133,24 +140,24 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   name                       = "DormantAccountReactivation"
   log_analytics_workspace_id = local.workspace_id
   display_name               = "Dormant Account Reactivation Detected"
-  
+
   enabled           = true
   query_frequency   = "PT1H"
   query_period      = "P1D"
   trigger_operator  = "GreaterThan"
   trigger_threshold = 0
-  
+
   severity = "High"
   tactics  = ["Persistence", "InitialAccess"]
-  
+
   query = file("${path.module}/../kql-queries/dormant-account-detection.kql")
-  
+
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
       entity_matching_method  = "AnyAlert"
       reopen_closed_incidents = false
     }
@@ -159,29 +166,29 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
     azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
     time_sleep.wait_for_sentinel
   ]
- }
- resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
+}
+resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
   name                       = "ImpossibleTravelDetection"
   log_analytics_workspace_id = local.workspace_id
   display_name               = "Impossible Travel Login"
-  
+
   enabled           = true
   query_frequency   = "PT1H"
   query_period      = "P1D"
   trigger_operator  = "GreaterThan"
   trigger_threshold = 0
-  
+
   severity = "Medium"
   tactics  = ["InitialAccess"]
-  
+
   query = file("${path.module}/../kql-queries/impossible-travel-detection.kql")
-  
+
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
       entity_matching_method  = "AnyAlert"
       reopen_closed_incidents = false
     }
@@ -190,29 +197,29 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
     azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
     time_sleep.wait_for_sentinel
   ]
- }
- resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
+}
+resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
   name                       = "FailedLoginFloodDetection"
   log_analytics_workspace_id = local.workspace_id
   display_name               = "Failed Login Flood (Password Spray)"
-  
+
   enabled           = true
   query_frequency   = "PT1H"
   query_period      = "P1D"
   trigger_operator  = "GreaterThan"
   trigger_threshold = 0
-  
+
   severity = "High"
   tactics  = ["CredentialAccess"]
-  
+
   query = file("${path.module}/../kql-queries/failed-login-flood-detection.kql")
-  
+
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
       entity_matching_method  = "AnyAlert"
       reopen_closed_incidents = false
     }
@@ -221,29 +228,29 @@ resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
     azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
     time_sleep.wait_for_sentinel
   ]
- }
+}
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
   log_analytics_workspace_id = local.workspace_id
   display_name               = "Unauthorized Privilege Escalation"
-  
+
   enabled           = true
   query_frequency   = "PT1H"
   query_period      = "P1D"
   trigger_operator  = "GreaterThan"
   trigger_threshold = 0
-  
+
   severity = "High"
   tactics  = ["PrivilegeEscalation"]
-  
+
   query = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
-  
+
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
       entity_matching_method  = "AnyAlert"
       reopen_closed_incidents = false
     }
@@ -252,7 +259,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
     azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
     time_sleep.wait_for_sentinel
   ]
- }
+}
 
 # Detect Azure VM/Deployment activity spikes
 resource "azurerm_sentinel_alert_rule_scheduled" "vm_deployment_activity" {
@@ -306,7 +313,7 @@ resource "azurerm_sentinel_alert_rule_scheduled" "vm_deployment_activity" {
 
 
 resource "azurerm_security_center_subscription_pricing" "defender_vms" {
-  tier          = "Free"  # No extra cost tier for Virtual Machines
+  tier          = "Free" # No extra cost tier for Virtual Machines
   resource_type = "VirtualMachines"
 }
 
@@ -316,32 +323,82 @@ resource "azurerm_security_center_subscription_pricing" "defender_vms" {
 
 # Use fixed suffix to prevent creating multiple storage accounts and key vaults
 locals {
-  storage_suffix = "5n7ekf"  # Match your existing Key Vault kv-identity-5n7ekf
+  storage_suffix = "5n7ekf" # Match your existing Key Vault kv-identity-5n7ekf
 }
 
 data "azurerm_client_config" "current" {}
 
+# ===========================
+# Storage Account for Terraform State (Backend)
+# ===========================
+# This storage account stores the terraform.tfstate file
+# If someone deletes it, terraform apply will recreate it
+
+resource "azurerm_storage_account" "tfstate" {
+  name                     = "tfstate${var.backend_suffix}"
+  resource_group_name      = azurerm_resource_group.identity_lab.name
+  location                 = azurerm_resource_group.identity_lab.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  # Security hardening
+  enable_https_traffic_only       = true
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
+
+  # Versioning for state file history
+  blob_properties {
+    versioning_enabled = true
+
+    delete_retention_policy {
+      days = 30 # Keep deleted state files for 30 days
+    }
+
+    container_delete_retention_policy {
+      days = 30
+    }
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    prevent_destroy = false  # Allow destruction for full automation
+    ignore_changes  = [name] # Keep same name across runs
+  }
+}
+
+# Create container for state file
+resource "azurerm_storage_container" "tfstate" {
+  name                  = "tfstate"
+  storage_account_name  = azurerm_storage_account.tfstate.name
+  container_access_type = "private"
+}
+
+# ===========================
+# Key Vault
+# ===========================
+
 resource "azurerm_key_vault" "identity_vault" {
   name                       = "kv-identity-${local.storage_suffix}"
-  location                   = data.azurerm_resource_group.identity_lab.location
-  resource_group_name        = data.azurerm_resource_group.identity_lab.name
+  location                   = azurerm_resource_group.identity_lab.location
+  resource_group_name        = azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
-  soft_delete_retention_days = 7   # Can recover deleted secrets for 7 days
-  purge_protection_enabled   = true  # Prevent permanent deletion during retention period
+  soft_delete_retention_days = 7     # Can recover deleted secrets for 7 days
+  purge_protection_enabled   = false # Allow full deletion for automation
   enable_rbac_authorization  = true  # Role Based Access Control for permissions
-  
+
   network_acls {
-    default_action = "Allow"  # Changed from Deny to allow GitHub Actions
-    bypass         = "AzureServices"  # Allow trusted Azure services
-    ip_rules       = []  # Can add specific IPs later if needed
+    default_action = "Allow"         # Changed from Deny to allow GitHub Actions
+    bypass         = "AzureServices" # Allow trusted Azure services
+    ip_rules       = []              # Can add specific IPs later if needed
   }
-  
+
   tags = var.tags
-  
+
   lifecycle {
-    prevent_destroy = true
-    ignore_changes  = [name]  # Keep same name on subsequent runs
+    prevent_destroy = false  # Allow destruction for full automation
+    ignore_changes  = [name] # Keep same name on subsequent runs
   }
 }
 
@@ -361,7 +418,7 @@ resource "azurerm_key_vault_secret" "teams_webhook" {
   depends_on = [azurerm_role_assignment.keyvault_admin]
 
   lifecycle {
-    ignore_changes = [value]  # Ignore changes to secret value after creation
+    ignore_changes = [value] # Ignore changes to secret value after creation
   }
 }
 

@@ -2,8 +2,8 @@
 
 resource "azurerm_logic_app_workflow" "auto_remediate" {
   name                = "identity-auto-remediate"
-  location            = data.azurerm_resource_group.identity_lab.location
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
+  location            = azurerm_resource_group.identity_lab.location
+  resource_group_name = azurerm_resource_group.identity_lab.name
   tags                = var.tags
 }
 

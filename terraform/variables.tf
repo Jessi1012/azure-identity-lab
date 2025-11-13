@@ -22,7 +22,7 @@ variable "location" {
 variable "workspace_name" {
   description = "Name of the Log Analytics Workspace. This name must be globally unique."
   type        = string
-  default     = "identity-lab-logs-v3"  # Fresh workspace to avoid GUID caching issues
+  default     = "identity-lab-logs-v3" # Fresh workspace to avoid GUID caching issues
   # If the name is already taken, change it to something like 'identity-lab-logs-yourname-2025'
 }
 
@@ -32,10 +32,18 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "backend_suffix" {
+  description = "Suffix for storage account name (must be unique, lowercase, no special chars). Example: b54w9t"
+  type        = string
+  default     = "b54w9t"
+  # This should match your existing storage account if you have one
+  # Or generate new: https://www.random.org/strings/?num=1&len=6&digits=on&loweralpha=on&unique=on&format=plain
+}
+
 variable "create_workspace" {
   description = "Set to true for first deployment to create workspace. Set to false after initial deployment to use existing workspace."
   type        = bool
-  default     = false  # Default to false to prevent recreation
+  default     = false # Default to false to prevent recreation
 }
 
 variable "tags" {
@@ -45,7 +53,7 @@ variable "tags" {
     Environment = "Lab"
     Project     = "Identity-Detection"
     ManagedBy   = "Terraform"
-    Owner       = "Your-Name"  # Replace with your actual name
+    Owner       = "Your-Name" # Replace with your actual name
   }
 }
 
@@ -59,7 +67,7 @@ variable "teams_webhook_url" {
   sensitive   = true
   # This is a secret value and will not be shown in logs or outputs.
   # You will get this URL from your Microsoft Teams channel.
-  default     = "" # Provide via tfvars or environment TF_VAR_teams_webhook_url
+  default = "" # Provide via tfvars or environment TF_VAR_teams_webhook_url
 }
 
 # =============================
@@ -70,14 +78,14 @@ variable "service_principal_client_id" {
   description = "Azure Service Principal Client ID - used for GitHub Actions authentication."
   type        = string
   sensitive   = true
-  default     = ""  # Leave empty if deploying manually
+  default     = "" # Leave empty if deploying manually
 }
 
 variable "service_principal_client_secret" {
   description = "Azure Service Principal Client Secret - used for GitHub Actions authentication."
   type        = string
   sensitive   = true
-  default     = ""  # Leave empty if deploying manually
+  default     = "" # Leave empty if deploying manually
 }
 
 # Note:

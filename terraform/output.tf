@@ -1,8 +1,18 @@
 # outputs.tf
 
 output "resource_group_name" {
-  value       = data.azurerm_resource_group.identity_lab.name
+  value       = azurerm_resource_group.identity_lab.name
   description = "Name of the resource group created"
+}
+
+output "storage_account_name" {
+  value       = azurerm_storage_account.tfstate.name
+  description = "Name of the storage account for Terraform state"
+}
+
+output "state_container_name" {
+  value       = azurerm_storage_container.tfstate.name
+  description = "Name of the container storing terraform state"
 }
 
 output "workspace_id" {
@@ -21,7 +31,7 @@ output "key_vault_id" {
 }
 
 output "detection_rules" {
-  value       = [
+  value = [
     azurerm_sentinel_alert_rule_scheduled.dormant_account.display_name,
     azurerm_sentinel_alert_rule_scheduled.impossible_travel.display_name,
     azurerm_sentinel_alert_rule_scheduled.failed_login_flood.display_name,
@@ -31,9 +41,9 @@ output "detection_rules" {
 }
 
 output "deployment_summary" {
-  value = <<-EOT
+  value       = <<-EOT
 ✅ DEPLOYMENT COMPLETE!
-Resource Group: ${data.azurerm_resource_group.identity_lab.name}
+Resource Group: ${azurerm_resource_group.identity_lab.name}
 Workspace: ${var.workspace_name}
 Key Vault: ${azurerm_key_vault.identity_vault.name}
 
