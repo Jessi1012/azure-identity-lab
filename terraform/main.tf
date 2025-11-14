@@ -342,7 +342,7 @@ resource "azurerm_storage_account" "tfstate" {
   account_replication_type = "LRS"
 
   # Security hardening
-  enable_https_traffic_only       = true
+  https_traffic_only_enabled      = true # Renamed from enable_https_traffic_only (v4.0 compatible)
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
 
@@ -384,9 +384,9 @@ resource "azurerm_key_vault" "identity_vault" {
   resource_group_name        = azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
-  soft_delete_retention_days = 7     # Can recover deleted secrets for 7 days
-  purge_protection_enabled   = false # Allow full deletion for automation
-  enable_rbac_authorization  = true  # Role Based Access Control for permissions
+  soft_delete_retention_days = 7    # Can recover deleted secrets for 7 days
+  purge_protection_enabled   = true # Once enabled, cannot be disabled (Azure restriction)
+  enable_rbac_authorization  = true # Role Based Access Control for permissions
 
   network_acls {
     default_action = "Allow"         # Changed from Deny to allow GitHub Actions
