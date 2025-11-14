@@ -10,6 +10,7 @@ on:
       - 'kql-queries/**'
       - 'scripts/**'
       - '.github/workflows/**'  # Also trigger when workflow files change
+      - 'docs/**'  # Trigger on documentation changes
   workflow_dispatch:  # Manual triggering still available
     inputs:
       environment:
