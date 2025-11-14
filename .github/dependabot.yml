@@ -1,0 +1,58 @@
+# Dependabot configuration for automated security updates
+# This monitors Terraform, GitHub Actions, and Python dependencies
+
+version: 2
+updates:
+  # Monitor Terraform provider updates
+  - package-ecosystem: "terraform"
+    directory: "/terraform"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "Jessi1012"
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "security"
+    commit-message:
+      prefix: "chore(terraform)"
+      include: "scope"
+
+  # Monitor GitHub Actions workflow dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "Jessi1012"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security"
+    commit-message:
+      prefix: "chore(actions)"
+      include: "scope"
+
+  # Monitor Python dependencies (if you add requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "Jessi1012"
+    labels:
+      - "dependencies"
+      - "python"
+      - "security"
+    commit-message:
+      prefix: "chore(python)"
+      include: "scope"

@@ -1,0 +1,6 @@
+AzureActivity
+| where OperationName == "Create or Update Virtual Machine" or OperationName == "Create Deployment"
+| where ActivityStatus == "Succeeded"
+| summarize DeploymentCount = dcount(ResourceId) by Caller, bin(EventSubmissionTimestamp, 1d)
+| where DeploymentCount > 0
+| sort by EventSubmissionTimestamp desc

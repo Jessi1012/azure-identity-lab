@@ -1,0 +1,82 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type "DESTROY" to confirm destruction'
+        required: true
+      resource_group:
+        description: 'Resource Group to destroy'
+        required: true
+        default: 'Identity-Lab-RG'
+
+jobs:
+  destroy:
+    name: Destroy Azure Resources
+    runs-on: ubuntu-latest
+    environment: production  # Requires approval
+    
+    env:
+      ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+      ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+      ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+
+    steps:
+      - name: Validate Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]; then
+            echo "❌ Confirmation failed. You must type 'DESTROY' to proceed."
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Destroy
+        working-directory: ./terraform
+        run: terraform destroy -auto-approve
+        env:
+          TF_VAR_resource_group_name: ${{ github.event.inputs.resource_group }}
+          TF_VAR_location: "eastus"
+          TF_VAR_workspace_name: "identity-lab-logs-v2"
+          TF_VAR_log_retention_days: "30"
+          TF_VAR_teams_webhook_url: ""
+
+      - name: Create Destruction Record
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🗑️ Infrastructure Destroyed',
+              body: `## Infrastructure Destruction Record
+              
+              **Destroyed By:** @${{ github.actor }}
+              **Timestamp:** ${new Date().toISOString()}
+              **Resource Group:** ${{ github.event.inputs.resource_group }}
+              **Workflow Run:** [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+              
+              All Azure resources have been destroyed.
+              
+              ---
+              🤖 Auto-generated destruction record`,
+              labels: ['infrastructure', 'destroyed']
+            });

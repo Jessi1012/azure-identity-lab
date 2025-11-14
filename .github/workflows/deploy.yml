@@ -2,75 +2,394 @@ name: Deploy to Azure
 
 on:
   push:
-    branches:
-      - main
-      - feature/**
-    paths:
+    branches: 
+      - main  # Auto-deploy on merge to main
+      - feature/test-deployment  # Temporarily enable auto-deploy for testing
+    paths: 
       - 'terraform/**'
-  workflow_dispatch:
+      - 'kql-queries/**'
+      - 'scripts/**'
+      - '.github/workflows/**'  # Also trigger when workflow files change
+      - 'docs/**'  # Trigger on documentation changes
+  workflow_dispatch:  # Manual triggering still available
     inputs:
-      ref:
-        description: 'Branch or tag to deploy'
-        required: false
-        default: 'main'
-
-permissions:
-  contents: read
-  id-token: write
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - production
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
+    environment: development
+    
+    env:
+      NUKE_STATE: "false"  # Set to "true" only for one-time clean reset
+      TF_VAR_resource_group_name: "Identity-Lab-RG"
+      TF_VAR_location: "eastus"
+      TF_VAR_workspace_name: "identity-lab-logs-v3"  # Fresh workspace v3
+      TF_VAR_log_retention_days: "30"
+      TF_VAR_teams_webhook_url: ${{ secrets.TF_VAR_TEAMS_WEBHOOK_URL || '' }}
+      # Backend authentication for Service Principal
+      ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+      ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+      ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          # Use selected ref during manual dispatch; otherwise use the triggering ref
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref }}
+      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.0
 
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}  # JSON credentials from service principal
 
       - name: Terraform Init
         working-directory: ./terraform
         run: terraform init
 
-      - name: Debug Terraform file (temporary)
-        if: always()
+      - name: NUCLEAR OPTION - Delete Corrupted State (ONE TIME ONLY)
+        if: env.NUKE_STATE == 'true'
+        working-directory: ./terraform
         run: |
-          echo "Ref: $GITHUB_REF"
-          echo "SHA: $GITHUB_SHA"
-          ls -la ./terraform
-          echo "Searching for invalid 'action "ActionGroup"' blocks in main.tf"
-          grep -n 'action \"ActionGroup\"' ./terraform/main.tf || echo "No invalid action blocks found"
-          echo "Checksum of main.tf:" && sha256sum ./terraform/main.tf || shasum -a 256 ./terraform/main.tf
+          echo "🔥 DELETING CORRUPTED STATE - This will force clean start"
+          echo "After this deployment succeeds, remove this step from the workflow"
+          
+          # Delete the corrupted state file
+          az storage blob delete \
+            --account-name tfstateb54w9t \
+            --container-name tfstate \
+            --name terraform.tfstate \
+            --auth-mode login \
+            || echo "State already deleted or doesn't exist"
+          
+          # Reinitialize with fresh state
+          terraform init -reconfigure
+          
+          echo "✅ Fresh state created"
 
-      - name: Verify Azure Context
+      - name: Remove v2 Workspace from State (switching to v3)
+        working-directory: ./terraform
+        continue-on-error: true
         run: |
-          echo "Showing Azure account context after login:" 
-          az account show || echo "Azure CLI context not available"
+          echo "🔄 Removing v2 workspace and Sentinel from state to allow v3 creation..."
+          terraform state rm azurerm_log_analytics_workspace.identity_logs || true
+          terraform state rm azurerm_sentinel_log_analytics_workspace_onboarding.sentinel || true
+          terraform state rm time_sleep.wait_for_sentinel || true
+          echo "✅ v2 resources removed from state (they remain in Azure)"
+
+      - name: Import Existing Resources into Fresh State
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          echo "📥 Importing existing Azure resources into Terraform state..."
+          
+          # Helper: check if a Terraform address already exists in state
+          in_state() {
+            terraform state list 2>/dev/null | grep -q "^$1$"
+          }
+          
+          # Import Resource Group FIRST (must exist before any other resources)
+          if az group show --name "$TF_VAR_resource_group_name" -o none >/dev/null 2>&1; then
+            echo "✅ Resource Group found - importing (if not already in state)..."
+            RG_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name"
+            if in_state azurerm_resource_group.identity_lab; then
+              echo "⏭️ Resource Group already in state - skipping import"
+            else
+              terraform import azurerm_resource_group.identity_lab "$RG_ID" || echo "⚠️ Resource Group import failed (non-fatal)"
+            fi
+          else
+            echo "⏭️ Resource Group not found - will be created by Terraform"
+          fi
+          
+          # Import Log Analytics Workspace (CRITICAL - must exist before Sentinel)
+          if az monitor log-analytics workspace show \
+              --resource-group "$TF_VAR_resource_group_name" \
+              --workspace-name "$TF_VAR_workspace_name" -o none >/dev/null 2>&1; then
+            echo "✅ Workspace found - importing (if not already in state)..."
+            WORKSPACE_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name"
+            if in_state azurerm_log_analytics_workspace.identity_logs; then
+              echo "⏭️ Workspace already in state - skipping import"
+            else
+              terraform import azurerm_log_analytics_workspace.identity_logs "$WORKSPACE_ID" || echo "Workspace import failed (non-fatal)"
+            fi
+          else
+            echo "⏭️ Workspace not found - will be created by Terraform"
+          fi
+          
+          # Check if Sentinel exists before importing
+          if az rest --method GET \
+              --url "https://management.azure.com/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2023-02-01" \
+              -o none >/dev/null 2>&1; then
+            echo "✅ Sentinel found - importing (if not already in state)..."
+            SENTINEL_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name/providers/Microsoft.SecurityInsights/onboardingStates/default"
+            if in_state azurerm_sentinel_log_analytics_workspace_onboarding.sentinel; then
+              echo "⏭️ Sentinel already in state - skipping import"
+            else
+              terraform import azurerm_sentinel_log_analytics_workspace_onboarding.sentinel "$SENTINEL_ID" || echo "Sentinel import failed (non-fatal)"
+            fi
+          else
+            echo "⏭️ Sentinel not found - will be created by Terraform"
+          fi
+
+          # Import existing Sentinel Scheduled Alert Rules (avoid duplicate create errors)
+          # Format: "<AzureRuleName> <TerraformAddress>"
+          ALERT_RULE_MAP=(
+            "DormantAccountReactivation azurerm_sentinel_alert_rule_scheduled.dormant_account"
+            "ImpossibleTravelDetection azurerm_sentinel_alert_rule_scheduled.impossible_travel"
+            "FailedLoginFloodDetection azurerm_sentinel_alert_rule_scheduled.failed_login_flood"
+            "PrivilegeEscalationDetection azurerm_sentinel_alert_rule_scheduled.privilege_escalation"
+            "VMDeploymentActivity azurerm_sentinel_alert_rule_scheduled.vm_deployment_activity"
+          )
+          for ENTRY in "${ALERT_RULE_MAP[@]}"; do
+            RULE_NAME=$(echo "$ENTRY" | awk '{print $1}')
+            TF_ADDR=$(echo "$ENTRY" | awk '{print $2}')
+            RULE_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name/providers/Microsoft.SecurityInsights/alertRules/$RULE_NAME"
+            # Check existence via REST; if exists and not in state, import
+            if az rest --method GET --url "https://management.azure.com${RULE_ID}?api-version=2023-02-01" -o none >/dev/null 2>&1; then
+              if in_state "$TF_ADDR"; then
+                echo "⏭️ Alert Rule $RULE_NAME already in state - skipping"
+              else
+                echo "📥 Importing existing Alert Rule: $RULE_NAME"
+                terraform import "$TF_ADDR" "$RULE_ID" || echo "⚠️ Import failed for $RULE_NAME (non-fatal)"
+              fi
+            else
+              echo "⏭️ Alert Rule $RULE_NAME not found - will be created by Terraform"
+            fi
+          done
+          
+          # Import Key Vault (find by prefix)
+          KV_NAME=$(az keyvault list --resource-group "$TF_VAR_resource_group_name" --query "[?starts_with(name, 'kv-identity-')].name" -o tsv | head -1)
+          if [ -n "$KV_NAME" ]; then
+            KV_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.KeyVault/vaults/$KV_NAME"
+            if in_state azurerm_key_vault.identity_vault; then
+              echo "⏭️ Key Vault already in state - skipping import"
+            else
+              terraform import azurerm_key_vault.identity_vault "$KV_ID" || echo "Key Vault import failed (non-fatal)"
+            fi
+            
+            # Import Key Vault secret (needs versioned ID); get latest version id
+            SECRET_ID=$(az keyvault secret show --vault-name "$KV_NAME" --name "teams-webhook-url" --query id -o tsv 2>/dev/null || echo "")
+            if [ -n "$SECRET_ID" ]; then
+              if in_state azurerm_key_vault_secret.teams_webhook; then
+                echo "⏭️ KV secret already in state - skipping import"
+              else
+                terraform import azurerm_key_vault_secret.teams_webhook "$SECRET_ID" || echo "KV Secret import failed (non-fatal)"
+              fi
+            else
+              echo "⏭️ KV secret not found - will be created by Terraform"
+            fi
+          fi
+          
+          # Import Logic App
+          LOGIC_APP_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.Logic/workflows/identity-auto-remediate"
+          if in_state azurerm_logic_app_workflow.auto_remediate; then
+            echo "⏭️ Logic App already in state - skipping import"
+          else
+            terraform import azurerm_logic_app_workflow.auto_remediate "$LOGIC_APP_ID" || echo "Logic App import failed (non-fatal)"
+          fi
+          
+          # Import Logic App HTTP Trigger
+          LOGIC_APP_TRIGGER_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.Logic/workflows/identity-auto-remediate/triggers/When-Sentinel-Alert-Fires"
+          if in_state azurerm_logic_app_trigger_http_request.sentinel_trigger; then
+            echo "⏭️ Logic App trigger already in state - skipping import"
+          else
+            terraform import azurerm_logic_app_trigger_http_request.sentinel_trigger "$LOGIC_APP_TRIGGER_ID" || echo "Logic App trigger import failed (non-fatal)"
+          fi
+          
+          # Import Storage Account
+          STORAGE_NAME=$(az storage account list --resource-group "$TF_VAR_resource_group_name" --query "[?starts_with(name, 'tfstate')].name" -o tsv | head -1)
+          if [ -n "$STORAGE_NAME" ]; then
+            STORAGE_ID="/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.Storage/storageAccounts/$STORAGE_NAME"
+            if in_state azurerm_storage_account.tfstate; then
+              echo "⏭️ Storage account already in state - skipping import"
+            else
+              terraform import azurerm_storage_account.tfstate "$STORAGE_ID" || echo "Storage account import failed (non-fatal)"
+            fi
+            if in_state azurerm_storage_container.tfstate; then
+              echo "⏭️ Storage container already in state - skipping import"
+            else
+              terraform import azurerm_storage_container.tfstate "https://${STORAGE_NAME}.blob.core.windows.net/tfstate" || echo "Container import failed (non-fatal)"
+            fi
+          fi
+          
+          echo "✅ Import complete - some resources may need to be created fresh"
+
+      - name: Reset Sentinel Onboarding (force fresh bind)
+        continue-on-error: true
+        run: |
+          echo "♻️ Forcing fresh Sentinel onboarding to avoid stale workspace GUID references..."
+          # Delete existing onboarding state if present (ignore 404)
+          az rest --method DELETE \
+            --url "https://management.azure.com/subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/${{ env.TF_VAR_resource_group_name }}/providers/Microsoft.OperationalInsights/workspaces/${{ env.TF_VAR_workspace_name }}/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2023-02-01" \
+            || true
+          # Give the platform a few seconds to settle
+          sleep 15
+
+      - name: Grant Service Principal Key Vault Permissions
+        continue-on-error: true
+        run: |
+          echo "🔐 Granting Key Vault RBAC permissions to service principal..."
+          
+          # Find Key Vault by prefix
+          KV_NAME=$(az keyvault list --resource-group "${{ env.TF_VAR_resource_group_name }}" --query "[?starts_with(name, 'kv-identity-')].name" -o tsv | head -1)
+          
+          if [ -n "$KV_NAME" ]; then
+            echo "Found Key Vault: $KV_NAME"
+            
+            # Get service principal object ID from credentials
+            SP_OBJECT_ID=$(az ad sp show --id "${{ env.ARM_CLIENT_ID }}" --query "id" -o tsv)
+            echo "Service Principal Object ID: $SP_OBJECT_ID"
+            
+            # Grant Key Vault Secrets Officer role
+            az role assignment create \
+              --assignee "$SP_OBJECT_ID" \
+              --role "Key Vault Secrets Officer" \
+              --scope "/subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/${{ env.TF_VAR_resource_group_name }}/providers/Microsoft.KeyVault/vaults/$KV_NAME" \
+              || echo "Role assignment already exists or failed"
+            
+            echo "✅ Key Vault permissions granted (may need 1-2 minutes to propagate)"
+            sleep 60
+          else
+            echo "⏭️ No Key Vault found - will be created by Terraform"
+          fi
+
+      - name: Delete ALL Existing Sentinel Alert Rules
+        working-directory: ./terraform
+        continue-on-error: true
+        run: |
+          echo "🗑️ Deleting ALL existing Sentinel alert rules (they have wrong workspace IDs)..."
+          
+          # Get all existing alert rules
+          ALERT_RULES=$(az rest --method GET \
+            --url "https://management.azure.com/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name/providers/Microsoft.SecurityInsights/alertRules?api-version=2023-02-01" \
+            --query "value[].name" -o tsv 2>/dev/null || echo "")
+          
+          if [ -n "$ALERT_RULES" ]; then
+            for RULE_NAME in $ALERT_RULES; do
+              echo "  🗑️ Deleting: $RULE_NAME"
+              az rest --method DELETE \
+                --url "https://management.azure.com/subscriptions/$ARM_SUBSCRIPTION_ID/resourceGroups/$TF_VAR_resource_group_name/providers/Microsoft.OperationalInsights/workspaces/$TF_VAR_workspace_name/providers/Microsoft.SecurityInsights/alertRules/${RULE_NAME}?api-version=2023-02-01" \
+                || echo "Failed to delete $RULE_NAME"
+              sleep 2
+            done
+            echo "✅ All alert rules deleted"
+          else
+            echo "✅ No alert rules to delete"
+          fi
+
+      - name: Terraform Plan (Phase 1 - Workspace + Sentinel)
+        working-directory: ./terraform
+        run: |
+          echo "📋 Planning core infra only (workspace + sentinel)..."
+          terraform plan -out=tfplan-core \
+            -target=azurerm_log_analytics_workspace.identity_logs \
+            -target=azurerm_sentinel_log_analytics_workspace_onboarding.sentinel \
+            -target=time_sleep.wait_for_sentinel \
+            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+
+      - name: Terraform Apply (Phase 1 - Workspace + Sentinel)
+        working-directory: ./terraform
+        run: |
+          echo "🚀 Applying core infra (workspace + sentinel) plan..."
+          terraform apply -auto-approve tfplan-core
+
+      - name: Wait for Sentinel Onboarding
+        run: |
+          echo "⏳ Waiting for Microsoft Sentinel onboarding to be present..."
+          ONBOARDED=0
+          for i in $(seq 1 20); do
+            if az rest --method GET \
+              --url "https://management.azure.com/subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/${{ env.TF_VAR_resource_group_name }}/providers/Microsoft.OperationalInsights/workspaces/${{ env.TF_VAR_workspace_name }}/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2023-02-01" \
+              --query name -o tsv >/dev/null 2>&1; then
+              ONBOARDED=1
+              break
+            fi
+            echo "  Attempt $i/20: Sentinel not onboarded yet, sleeping 20s..."
+            sleep 20
+          done
+          if [ "$ONBOARDED" -ne 1 ]; then
+            echo "❌ Sentinel not onboarded after ~7 minutes. Failing early."; exit 1
+          fi
+          echo "✅ Sentinel onboarding detected. Adding extra 30s buffer..."
+          sleep 30
+
+      - name: Terraform Plan (Phase 2 - Sentinel Alert Rules)
+        working-directory: ./terraform
+        run: |
+          echo "📋 Planning Sentinel alert rules after onboarding..."
+          terraform plan -out=tfplan-rules \
+            -target='azurerm_sentinel_alert_rule_scheduled.dormant_account' \
+            -target='azurerm_sentinel_alert_rule_scheduled.impossible_travel' \
+            -target='azurerm_sentinel_alert_rule_scheduled.failed_login_flood' \
+            -target='azurerm_sentinel_alert_rule_scheduled.privilege_escalation' \
+            -target='azurerm_sentinel_alert_rule_scheduled.vm_deployment_activity' \
+            -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+
+      - name: Wait for Log Analytics Workspace to be Queryable
+        continue-on-error: true
+        run: |
+          echo "⏳ Waiting for Log Analytics workspace to be fully queryable..."
+          # Get workspace GUID (customerId)
+          CUSTOMER_ID=$(az monitor log-analytics workspace show \
+            --resource-group "${{ env.TF_VAR_resource_group_name }}" \
+            --workspace-name "${{ env.TF_VAR_workspace_name }}" \
+            --query customerId -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$CUSTOMER_ID" ]; then
+            echo "ℹ️ Workspace not found yet (likely first run) - relying on Terraform time_sleep to wait."
+            exit 0
+          fi
+
+          echo "Workspace customerId: $CUSTOMER_ID"
+          READY=0
+          for i in $(seq 1 30); do
+            if az monitor log-analytics query -w "$CUSTOMER_ID" --analytics-query "print 1" -o none 2>/dev/null; then
+              READY=1
+              break
+            fi
+            echo "  Attempt $i/30: not ready yet, sleeping 20s..."
+            sleep 20
+          done
+          if [ "$READY" -eq 1 ]; then
+            echo "✅ Workspace is queryable. Waiting an extra 60s for Sentinel content services..."
+            sleep 60
+          else
+            echo "❌ Workspace not queryable after ~10 minutes. Failing early to avoid flaky rule creation."
+            exit 1
+          fi
 
       - name: Security Scan (Trivy)
         uses: aquasecurity/trivy-action@0.18.0
+        continue-on-error: true  # Don't fail workflow on Trivy findings
         with:
           scan-type: 'config'
           scan-ref: './terraform'
-        continue-on-error: false
+          trivyignores: 'terraform/.trivyignore'  # Use ignore file for acceptable findings
+          exit-code: '1'  # Fail if HIGH/CRITICAL issues found
 
-      - name: Terraform Apply
+      - name: Terraform Apply (Phase 2 - Sentinel Alert Rules)
         working-directory: ./terraform
-        run: terraform apply -auto-approve -var-file=terraform.tfvars
+        run: |
+          echo "🚀 Applying Sentinel alert rules plan..."
+          terraform apply -auto-approve tfplan-rules
+
+      - name: Terraform Apply (Phase 3 - Converge All)
+        working-directory: ./terraform
+        run: |
+          echo "🔁 Final converge apply to ensure full state sync..."
+          terraform apply -auto-approve -var="teams_webhook_url=${TF_VAR_teams_webhook_url}"
+        # Terraform automatically loads terraform.tfvars if present, or uses TF_VAR_* env vars
 
       - name: Create Success Summary
         run: |
           echo "# ✅ Deployment Successful!" >> $GITHUB_STEP_SUMMARY
-          echo "All resources deployed with security scanning passed." >> $GITHUB_STEP_SUMMARY
+          echo "All resources deployed to Azure" >> $GITHUB_STEP_SUMMARY

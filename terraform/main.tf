@@ -6,6 +6,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 }
 
@@ -13,224 +17,391 @@ provider "azurerm" {
   features {}
 }
 
-# Get current Azure client configuration like tenant and subscription info
-data "azurerm_client_config" "current" {}
 
-# 1. RESOURCE GROUP (use existing)
-data "azurerm_resource_group" "identity_lab" {
-  name = var.resource_group_name
+# ===========================
+# Resource Group
+# ===========================
+# Create resource group (Terraform fully manages it)
+resource "azurerm_resource_group" "identity_lab" {
+  name     = var.resource_group_name
+  location = var.location
+
+  tags = var.tags
+
+  lifecycle {
+    prevent_destroy = false # Allow destruction for full automation
+  }
 }
 
-# 2. LOG ANALYTICS WORKSPACE
+
+# ===========================
+# Log Analytics Workspace
+# ===========================
+# Create workspace - this is infrastructure that needs to exist first
 resource "azurerm_log_analytics_workspace" "identity_logs" {
   name                = var.workspace_name
-  location            = data.azurerm_resource_group.identity_lab.location
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
-  sku                 = "PerGB2018"
-  retention_in_days   = var.log_retention_days
-  tags                = var.tags
-}
+  location            = azurerm_resource_group.identity_lab.location
+  resource_group_name = azurerm_resource_group.identity_lab.name
 
-# 3. MICROSOFT SENTINEL
-# Import existing solution if already deployed manually:
-# terraform import azurerm_log_analytics_solution.sentinel "/subscriptions/645a9291-908c-4ee8-b187-9b84d1e25a36/resourceGroups/Identity-Lab-RG/providers/Microsoft.OperationsManagement/solutions/SecurityInsights(identity-lab-logs-workspace01)"
-resource "azurerm_log_analytics_solution" "sentinel" {
-  solution_name         = "SecurityInsights"
-  location              = data.azurerm_resource_group.identity_lab.location
-  resource_group_name   = data.azurerm_resource_group.identity_lab.name
-  workspace_resource_id = azurerm_log_analytics_workspace.identity_logs.id
-  workspace_name        = azurerm_log_analytics_workspace.identity_logs.name
+  sku               = "PerGB2018"
+  retention_in_days = var.log_retention_days
 
-  plan {
-    publisher = "Microsoft"
-    product   = "OMSGallery/SecurityInsights"
-  }
+  tags = var.tags
 
   lifecycle {
-    ignore_changes = [tags]
+    prevent_destroy = false # Allow destruction for full automation
   }
 }
 
-# 4. AZURE AD DIAGNOSTIC SETTINGS
-# Note: This resource has known provider issues. If it fails, configure manually in portal.
-resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
-  name                       = "SendLogsToSentinel"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+# Use the workspace ID
+locals {
+  workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+}
 
-  enabled_log {
-    category = "SignInLogs"
-    retention_policy {
-      enabled = false
-    }
-  }
+# ===========================
+# Enable Microsoft Sentinel (SIEM)
+# ===========================
 
-  enabled_log {
-    category = "AuditLogs"
-    retention_policy {
-      enabled = false
-    }
-  }
-
-  enabled_log {
-    category = "NonInteractiveUserSignInLogs"
-    retention_policy {
-      enabled = false
-    }
-  }
-
-  enabled_log {
-    category = "ServicePrincipalSignInLogs"
-    retention_policy {
-      enabled = false
-    }
-  }
+resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
+  workspace_id = local.workspace_id
 
   lifecycle {
-    ignore_changes = all
+    prevent_destroy = false # Allow destruction for full automation
   }
 }
 
-# 5. SENTINEL DETECTION RULES - Define multiple scheduled alert rules using KQL queries
+# Wait for Sentinel API to fully propagate before creating alert rules
+resource "time_sleep" "wait_for_sentinel" {
+  depends_on      = [azurerm_sentinel_log_analytics_workspace_onboarding.sentinel]
+  create_duration = "180s" # Give LA workspace + Sentinel more time to become queryable
+}
 
-# Dormant account reactivation detection
+# ===========================
+# Azure AD Diagnostic Settings (send Logs to Log Analytics)
+# ===========================
+
+# NOTE: Azure AD diagnostic settings require special tenant-level permissions
+# that are difficult to grant to Service Principals programmatically.
+# 
+# MANUAL SETUP (2 minutes in Azure Portal):
+# 1. Go to Azure Active Directory → Diagnostic settings
+# 2. Click "+ Add diagnostic setting"
+# 3. Name: SendLogsToSentinel
+# 4. Check: SignInLogs, AuditLogs, NonInteractiveUserSignInLogs, ServicePrincipalSignInLogs
+# 5. Destination: Send to Log Analytics workspace → identity-lab-logs-v3
+# 6. Save
+#
+# Once configured, Azure AD logs will automatically flow to Sentinel!
+
+# resource "azurerm_monitor_aad_diagnostic_setting" "entra_logs" {
+#   name                       = "SendLogsToSentinel"
+#   log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+# 
+#   enabled_log {
+#     category = "SignInLogs"  # Includes all sign-in attempts
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "AuditLogs"   # Includes all administrative changes
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "NonInteractiveUserSignInLogs" # Service account sign-ins
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# 
+#   enabled_log {
+#     category = "ServicePrincipalSignInLogs"  # App sign-ins
+#     
+#     retention_policy {
+#       enabled = false
+#     }
+#   }
+# }
+
+# ===========================
+# Sentinel Detection Rules
+# ===========================
+
+# Example Rule: Dormant Account Reactivation
+
 resource "azurerm_sentinel_alert_rule_scheduled" "dormant_account" {
   name                       = "DormantAccountReactivation"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Dormant Account Reactivation Detected"
-  enabled                    = true
-  query_frequency            = "PT1H"
-  query_period               = "P1D"
-  trigger_operator           = "GreaterThan"
-  trigger_threshold          = 0
-  severity                   = "High"
-  tactics                    = ["Persistence", "InitialAccess"]
-  query                      = file("${path.module}/../kql-queries/dormant-account-detection.kql")
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "High"
+  tactics  = ["Persistence", "InitialAccess"]
+
+  query = file("${path.module}/../kql-queries/dormant-account-detection.kql")
 
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
     }
   }
-
-  depends_on = [azurerm_log_analytics_solution.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
 }
-
-
-# Impossible travel detection
 resource "azurerm_sentinel_alert_rule_scheduled" "impossible_travel" {
-  name                       = "ImpossibleTravelDetection-${random_string.suffix.result}"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  name                       = "ImpossibleTravelDetection"
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Impossible Travel Login"
-  enabled                    = true
-  query_frequency            = "PT1H"
-  query_period               = "P1D"
-  trigger_operator           = "GreaterThan"
-  trigger_threshold          = 0
-  severity                   = "Medium"
-  tactics                    = ["InitialAccess"]
-  query                      = file("${path.module}/../kql-queries/impossible-travel-detection.kql")
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "Medium"
+  tactics  = ["InitialAccess"]
+
+  query = file("${path.module}/../kql-queries/impossible-travel-detection.kql")
 
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
     }
   }
-
-  depends_on = [azurerm_log_analytics_solution.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
 }
-
-
-# Failed login flood detection (password spray)
 resource "azurerm_sentinel_alert_rule_scheduled" "failed_login_flood" {
-  name                       = "FailedLoginFloodDetection-${random_string.suffix.result}"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  name                       = "FailedLoginFloodDetection"
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Failed Login Flood (Password Spray)"
-  enabled                    = true
-  query_frequency            = "PT1H"
-  query_period               = "P1D"
-  trigger_operator           = "GreaterThan"
-  trigger_threshold          = 0
-  severity                   = "High"
-  tactics                    = ["CredentialAccess"]
-  query                      = file("${path.module}/../kql-queries/failed-login-flood-detection.kql")
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "High"
+  tactics  = ["CredentialAccess"]
+
+  query = file("${path.module}/../kql-queries/failed-login-flood-detection.kql")
 
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
     }
   }
-
-  depends_on = [azurerm_log_analytics_solution.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
 }
-
-
-# Privilege escalation detection
 resource "azurerm_sentinel_alert_rule_scheduled" "privilege_escalation" {
   name                       = "PrivilegeEscalationDetection"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.identity_logs.id
+  log_analytics_workspace_id = local.workspace_id
   display_name               = "Unauthorized Privilege Escalation"
-  enabled                    = true
-  query_frequency            = "PT1H"
-  query_period               = "P1D"
-  trigger_operator           = "GreaterThan"
-  trigger_threshold          = 0
-  severity                   = "High"
-  tactics                    = ["PrivilegeEscalation"]
-  query                      = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P1D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "High"
+  tactics  = ["PrivilegeEscalation"]
+
+  query = file("${path.module}/../kql-queries/privilege-escalation-detection.kql")
 
   incident {
     create_incident_enabled = true
 
     grouping {
-      enabled           = true
-      lookback_duration = "PT5M"
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
+    }
+  }
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
+}
+
+# Detect Azure VM/Deployment activity spikes
+resource "azurerm_sentinel_alert_rule_scheduled" "vm_deployment_activity" {
+  name                       = "VMDeploymentActivity"
+  log_analytics_workspace_id = local.workspace_id
+  display_name               = "Azure VM/Deployment Activity"
+
+  enabled           = true
+  query_frequency   = "PT1H"
+  query_period      = "P7D"
+  trigger_operator  = "GreaterThan"
+  trigger_threshold = 0
+
+  severity = "High"
+  tactics  = ["Execution"]
+
+  query = file("${path.module}/../kql-queries/vm-deployment-activity.kql")
+
+  incident {
+    create_incident_enabled = true
+
+    grouping {
+      enabled                 = true
+      lookback_duration       = "PT5M"
+      entity_matching_method  = "AnyAlert"
+      reopen_closed_incidents = false
     }
   }
 
-  depends_on = [azurerm_log_analytics_solution.sentinel]
+  depends_on = [
+    azurerm_sentinel_log_analytics_workspace_onboarding.sentinel,
+    time_sleep.wait_for_sentinel
+  ]
 }
 
+# ===========================
+# Defender for Cloud (Security Score)
+# ===========================
 
-# 6. DEFENDER FOR CLOUD CONFIGURATION (Free Tier)
-resource "azurerm_security_center_contact" "security_contact" {
-  email               = "chaitra.shashikala@gmail.com"
-  phone               = "+917204426101"
-  alert_notifications = true
-  alerts_to_admins    = true
-}
+# Security contact already exists (name must be 'default')
+# Import it if you want Terraform to manage it:
+#   terraform import azurerm_security_center_contact.security_contact "/subscriptions/645a9291-908c-4ee8-b187-9b84d1e25a36/providers/Microsoft.Security/securityContacts/default"
+# Or comment out to leave it as-is:
+
+# resource "azurerm_security_center_contact" "security_contact" {
+#   email               = "chaitra.shashikala@gmail.com"
+#   phone               = "+917204426101"
+#   alert_notifications = true
+#   alerts_to_admins    = true
+# }
+
 
 resource "azurerm_security_center_subscription_pricing" "defender_vms" {
-  tier          = "Free"
+  tier          = "Free" # No extra cost tier for Virtual Machines
   resource_type = "VirtualMachines"
 }
 
-# 7. KEY VAULT CONFIGURATION FOR SECRETS
-resource "random_string" "suffix" {
-  length  = 6
-  special = false
-  upper   = false
+# ===========================
+# Azure Key Vault (Secure Secret Storage)
+# ===========================
+
+# Use fixed suffix to prevent creating multiple storage accounts and key vaults
+locals {
+  storage_suffix = "5n7ekf" # Match your existing Key Vault kv-identity-5n7ekf
 }
 
+data "azurerm_client_config" "current" {}
+
+# ===========================
+# Storage Account for Terraform State (Backend)
+# ===========================
+# This storage account stores the terraform.tfstate file
+# If someone deletes it, terraform apply will recreate it
+
+resource "azurerm_storage_account" "tfstate" {
+  name                     = "tfstate${var.backend_suffix}"
+  resource_group_name      = azurerm_resource_group.identity_lab.name
+  location                 = azurerm_resource_group.identity_lab.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  # Security hardening
+  https_traffic_only_enabled      = true # Renamed from enable_https_traffic_only (v4.0 compatible)
+  min_tls_version                 = "TLS1_2"
+  allow_nested_items_to_be_public = false
+
+  # Versioning for state file history
+  blob_properties {
+    versioning_enabled = true
+
+    delete_retention_policy {
+      days = 30 # Keep deleted state files for 30 days
+    }
+
+    container_delete_retention_policy {
+      days = 30
+    }
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    prevent_destroy = false  # Allow destruction for full automation
+    ignore_changes  = [name] # Keep same name across runs
+  }
+}
+
+# Create container for state file
+resource "azurerm_storage_container" "tfstate" {
+  name                  = "tfstate"
+  storage_account_name  = azurerm_storage_account.tfstate.name
+  container_access_type = "private"
+}
+
+# ===========================
+# Key Vault
+# ===========================
+
 resource "azurerm_key_vault" "identity_vault" {
-  name                       = "kv-identity-${random_string.suffix.result}" # Vault name suffix to ensure uniqueness
-  location                   = data.azurerm_resource_group.identity_lab.location
-  resource_group_name        = data.azurerm_resource_group.identity_lab.name
+  name                       = "kv-identity-${local.storage_suffix}"
+  location                   = azurerm_resource_group.identity_lab.location
+  resource_group_name        = azurerm_resource_group.identity_lab.name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = false
-  enable_rbac_authorization  = true
-  tags                       = var.tags
+  soft_delete_retention_days = 7    # Can recover deleted secrets for 7 days
+  purge_protection_enabled   = true # Once enabled, cannot be disabled (Azure restriction)
+  enable_rbac_authorization  = true # Role Based Access Control for permissions
+
+  network_acls {
+    default_action = "Allow"         # Changed from Deny to allow GitHub Actions
+    bypass         = "AzureServices" # Allow trusted Azure services
+    ip_rules       = []              # Can add specific IPs later if needed
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    prevent_destroy = false  # Allow destruction for full automation
+    ignore_changes  = [name] # Keep same name on subsequent runs
+  }
 }
+
 
 resource "azurerm_role_assignment" "keyvault_admin" {
   scope                = azurerm_key_vault.identity_vault.id
@@ -238,13 +409,16 @@ resource "azurerm_role_assignment" "keyvault_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
-resource "azurerm_monitor_action_group" "identity_lab_action_group" {
-  name                = "CriticalAlertsAction"
-  resource_group_name = data.azurerm_resource_group.identity_lab.name
-  short_name          = "p0action"
 
-  email_receiver {
-    name          = "sendtoadmin"
-    email_address = "admin@contoso.com"
+resource "azurerm_key_vault_secret" "teams_webhook" {
+  name         = "teams-webhook-url"
+  value        = var.teams_webhook_url
+  key_vault_id = azurerm_key_vault.identity_vault.id
+
+  depends_on = [azurerm_role_assignment.keyvault_admin]
+
+  lifecycle {
+    ignore_changes = [value] # Ignore changes to secret value after creation
   }
 }
+

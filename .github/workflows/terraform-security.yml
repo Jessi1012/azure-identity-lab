@@ -1,0 +1,63 @@
+name: "Terraform Security Scan"
+
+on:
+  push:
+    branches: [ "main", "feature/test-deployment" ]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-security.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'terraform/**'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  tfsec:
+    name: tfsec Security Scanner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform
+          soft_fail: false  # Fail build on security issues
+          format: sarif
+          additional_args: --minimum-severity MEDIUM --out tfsec-results.sarif
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() || failure()
+        with:
+          sarif_file: tfsec-results.sarif
+
+  checkov:
+    name: Checkov Security Scanner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform/
+          framework: terraform
+          soft_fail: true  # Don't fail build, just report
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov results
+        uses: github/codeql-action/upload-sarif@v3
+        if: success() || failure()
+        with:
+          sarif_file: checkov-results.sarif

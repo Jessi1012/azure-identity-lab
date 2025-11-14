@@ -36,3 +36,18 @@ override.tf.json
 .terraformrc
 terraform.rc
 \--sdk-auth
+
+terraform.tfvars
+*.tfvars
+ 
+# Local credential export files (DO NOT COMMIT SECRETS)
+sp-credentials.json
+sp-credentials-*.json
+*.log
+*.backup
+.env
+.env.*
+**/secrets/
+**/*secret*
+**/*password*
+**/*credential*
